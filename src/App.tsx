@@ -9,6 +9,7 @@ type ArticleState = {
   html: string
   canonicalUrl: string
   sourceApiUrl: string
+  rewriteMode: 'llm' | 'heuristic'
 }
 
 function App() {
@@ -112,7 +113,8 @@ function App() {
           </div>
 
           <p className="disclaimer">
-            Satirical rewrite: article structure, links, and media are from Wikipedia; prose is transformed for parody.
+            Satirical rewrite: article structure, links, and media are from Wikipedia. Rewrite mode:{' '}
+            <strong>{article.rewriteMode === 'llm' ? 'LLM (enhanced)' : 'heuristic fallback'}</strong>.
           </p>
 
           <article className="mw-content" dangerouslySetInnerHTML={{ __html: article.html }} />

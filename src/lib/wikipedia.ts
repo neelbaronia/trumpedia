@@ -9,6 +9,7 @@ export type WikipediaArticle = {
   html: string
   canonicalUrl: string
   sourceApiUrl: string
+  rewriteMode: 'llm' | 'heuristic'
 }
 
 type ParseApiResponse = {
@@ -23,6 +24,15 @@ type ParseApiResponse = {
     code: string
     info: string
   }
+}
+
+type RewriteApiResponse = {
+  segments?: string[]
+}
+
+type RewriteTarget = {
+  node: Text
+  text: string
 }
 
 const SKIP_TEXT_TAGS = new Set([
@@ -46,6 +56,9 @@ const SKIP_CLASS_HINTS = [
   'metadata',
   'infobox-above',
 ]
+
+const REWRITE_BATCH_SIZE = 40
+const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || 'http://127.0.0.1:8787/api/rewrite'
 
 export function parseWikipediaUrl(input: string): ParsedWikipediaUrl {
   const trimmed = input.trim()
@@ -113,13 +126,14 @@ export async function fetchAndRewriteArticle(inputUrl: string): Promise<Wikipedi
   }
 
   const normalizedHtml = normalizeWikipediaHtml(parse.text['*'], parsed.lang)
-  const rewrittenHtml = rewriteArticleHtml(normalizedHtml)
+  const rewritten = await rewriteArticleHtml(normalizedHtml)
 
   return {
     title: stripHtml(parse.displaytitle || parse.title),
-    html: rewrittenHtml,
+    html: rewritten.html,
     canonicalUrl: parsed.canonicalUrl,
     sourceApiUrl: apiUrl.toString(),
+    rewriteMode: rewritten.rewriteMode,
   }
 }
 
@@ -154,29 +168,112 @@ function normalizeWikipediaHtml(rawHtml: string, lang: string): string {
   return root?.innerHTML || rawHtml
 }
 
-function rewriteArticleHtml(html: string): string {
+async function rewriteArticleHtml(html: string): Promise<{ html: string; rewriteMode: 'llm' | 'heuristic' }> {
   const parser = new DOMParser()
   const doc = parser.parseFromString(`<article id="content">${html}</article>`, 'text/html')
   const root = doc.querySelector('#content')
   if (!root) {
-    return html
+    return {
+      html,
+      rewriteMode: 'heuristic',
+    }
   }
 
+  const targets = collectRewriteTargets(doc, root)
+  if (targets.length === 0) {
+    return {
+      html: root.innerHTML,
+      rewriteMode: 'heuristic',
+    }
+  }
+
+  const llmSucceeded = await applyLlmRewrite(targets)
+  if (!llmSucceeded) {
+    for (const target of targets) {
+      target.node.nodeValue = heuristicRewrite(target.text)
+    }
+    return {
+      html: root.innerHTML,
+      rewriteMode: 'heuristic',
+    }
+  }
+
+  return {
+    html: root.innerHTML,
+    rewriteMode: 'llm',
+  }
+}
+
+function collectRewriteTargets(doc: Document, root: Element): RewriteTarget[] {
+  const targets: RewriteTarget[] = []
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   let node: Node | null = walker.nextNode()
 
   while (node) {
     const textNode = node as Text
     const parent = textNode.parentElement
+    const value = textNode.nodeValue || ''
 
-    if (parent && shouldRewriteNode(parent, textNode.nodeValue || '')) {
-      textNode.nodeValue = trumpifyText(textNode.nodeValue || '')
+    if (parent && shouldRewriteNode(parent, value)) {
+      targets.push({
+        node: textNode,
+        text: value,
+      })
     }
 
     node = walker.nextNode()
   }
 
-  return root.innerHTML
+  return targets
+}
+
+async function applyLlmRewrite(targets: RewriteTarget[]): Promise<boolean> {
+  try {
+    for (let i = 0; i < targets.length; i += REWRITE_BATCH_SIZE) {
+      const batch = targets.slice(i, i + REWRITE_BATCH_SIZE)
+      const rewrittenBatch = await rewriteSegmentsWithApi(batch.map((target) => target.text))
+      if (!rewrittenBatch || rewrittenBatch.length !== batch.length) {
+        return false
+      }
+
+      for (let j = 0; j < batch.length; j += 1) {
+        batch[j].node.nodeValue = rewrittenBatch[j]
+      }
+    }
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function rewriteSegmentsWithApi(segments: string[]): Promise<string[] | null> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 25000)
+
+  try {
+    const response = await fetch(REWRITE_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ segments }),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      return null
+    }
+
+    const payload = (await response.json()) as RewriteApiResponse
+    if (!Array.isArray(payload.segments)) {
+      return null
+    }
+
+    return payload.segments.map((value) => String(value))
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 function shouldRewriteNode(parent: Element, text: string): boolean {
@@ -200,7 +297,7 @@ function shouldRewriteNode(parent: Element, text: string): boolean {
   return true
 }
 
-function trumpifyText(input: string): string {
+function heuristicRewrite(input: string): string {
   const trimmed = input.trim()
   if (!trimmed) {
     return input
