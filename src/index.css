@@ -1,1 +1,260 @@
 @import "tailwindcss";
+
+:root {
+  font-family: Linux Libertine, Georgia, Times, "Times New Roman", serif;
+  color: #202122;
+  background: #f8f9fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: #0645ad;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.top-bar {
+  align-items: center;
+  background: #fff;
+  border-bottom: 1px solid #a2a9b1;
+  display: flex;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  align-items: center;
+  color: #202122;
+  display: inline-flex;
+  gap: 0.6rem;
+  font-weight: 700;
+}
+
+.brand-mark {
+  background: #c8102e;
+  border-radius: 50%;
+  color: #fff;
+  display: inline-grid;
+  font-family: Georgia, serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  height: 2rem;
+  place-items: center;
+  width: 2rem;
+}
+
+.brand-text {
+  font-size: 1.3rem;
+}
+
+.top-search {
+  display: flex;
+  flex: 1;
+  gap: 0.5rem;
+  max-width: 52rem;
+}
+
+.top-search input,
+.hero-search input {
+  border: 1px solid #a2a9b1;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 1rem;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  width: 100%;
+}
+
+.top-search button,
+.hero-search button {
+  background: #3366cc;
+  border: 1px solid #3366cc;
+  border-radius: 2px;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.5rem 0.8rem;
+  white-space: nowrap;
+}
+
+.top-search button:disabled,
+.hero-search button:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.landing {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: calc(100vh - 4rem);
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.landing h1 {
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: 400;
+  margin: 0;
+}
+
+.tagline {
+  color: #54595d;
+  margin: 0.8rem 0 1.4rem;
+}
+
+.hero-search {
+  display: flex;
+  gap: 0.6rem;
+  max-width: 48rem;
+  width: 100%;
+}
+
+.helper {
+  color: #54595d;
+  margin-top: 0.9rem;
+}
+
+.status-page {
+  margin: 2.5rem auto;
+  max-width: 52rem;
+  padding: 0 1rem;
+}
+
+.status-page h2 {
+  border-bottom: 1px solid #a2a9b1;
+  font-weight: 400;
+  margin: 0 0 0.8rem;
+  padding-bottom: 0.4rem;
+}
+
+.status-page.error {
+  color: #b32424;
+}
+
+.article-page {
+  margin: 1.2rem auto 3rem;
+  max-width: 96rem;
+  padding: 0 1rem;
+}
+
+.article-header {
+  align-items: baseline;
+  border-bottom: 1px solid #a2a9b1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.article-header h1 {
+  font-size: 2rem;
+  font-weight: 400;
+  margin: 0;
+}
+
+.article-links {
+  display: flex;
+  gap: 1rem;
+}
+
+.disclaimer {
+  background: #fff9db;
+  border: 1px solid #f3d279;
+  font-size: 0.94rem;
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.8rem;
+}
+
+.mw-content {
+  background: #fff;
+  border: 1px solid #c8ccd1;
+  line-height: 1.6;
+  padding: 1rem;
+}
+
+.mw-content h2,
+.mw-content h3,
+.mw-content h4 {
+  border-bottom: 1px solid #eaecf0;
+  font-weight: 400;
+  margin: 1.4rem 0 0.7rem;
+  padding-bottom: 0.2rem;
+}
+
+.mw-content img {
+  height: auto;
+  max-width: 100%;
+}
+
+.mw-content table {
+  border-collapse: collapse;
+}
+
+.mw-content .infobox {
+  background: #f8f9fa;
+  border: 1px solid #a2a9b1;
+  float: right;
+  font-size: 0.92rem;
+  margin: 0 0 1rem 1rem;
+  max-width: 22rem;
+}
+
+.mw-content .thumb {
+  clear: right;
+}
+
+.mw-content .thumbinner {
+  border: 1px solid #c8ccd1;
+  background: #f8f9fa;
+}
+
+.mw-content .reference {
+  font-size: 0.8em;
+}
+
+@media (max-width: 900px) {
+  .top-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hero-search {
+    flex-direction: column;
+  }
+
+  .top-search {
+    width: 100%;
+  }
+
+  .article-links {
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .mw-content .infobox {
+    float: none;
+    margin: 0 auto 1rem;
+  }
+}
