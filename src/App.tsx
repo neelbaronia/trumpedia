@@ -1,5 +1,3 @@
-import React from 'react'
-
 const Trumpedia = () => {
   return (
     <div className="min-h-screen bg-white text-[#202122] font-serif">
