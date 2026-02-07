@@ -123,18 +123,6 @@ function App() {
             </div>
           </div>
 
-          <p className="disclaimer">
-            Satirical rewrite: article structure, links, and media are from Wikipedia. Rewrite mode:{' '}
-            <strong>
-              {article.rewriteMode === 'llm'
-                ? 'LLM (enhanced)'
-                : article.rewriteMode === 'llm-partial'
-                  ? 'LLM partial (some fallback)'
-                  : 'heuristic fallback'}
-            </strong>
-            .
-          </p>
-
           <article className="mw-content" dangerouslySetInnerHTML={{ __html: article.html }} />
         </main>
       )}

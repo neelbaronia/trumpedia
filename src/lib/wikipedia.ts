@@ -57,8 +57,8 @@ const SKIP_CLASS_HINTS = [
   'infobox-above',
 ]
 
-const REWRITE_BATCH_SIZE = 20
-const MAX_CONCURRENT_REQUESTS = 6
+const REWRITE_BATCH_SIZE = 15
+const MAX_CONCURRENT_REQUESTS = 20
 const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || 'http://127.0.0.1:8787/api/rewrite'
 
 export function parseWikipediaUrl(input: string): ParsedWikipediaUrl {
