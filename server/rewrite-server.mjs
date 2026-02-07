@@ -1,8 +1,9 @@
 import { createServer } from 'node:http'
 
 const PORT = Number(process.env.REWRITE_PORT || 8787)
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini'
+const XAI_API_KEY = process.env.XAI_API_KEY
+const XAI_MODEL = process.env.XAI_MODEL || 'grok-4-1-fast'
+const XAI_API_BASE_URL = process.env.XAI_API_BASE_URL || 'https://api.x.ai/v1'
 
 const SYSTEM_PROMPT = [
   'You rewrite encyclopedia prose into a satirical, bombastic political narrator voice.',
@@ -54,19 +55,19 @@ function validateSegments(input) {
   return input.map((value) => String(value))
 }
 
-async function rewriteWithOpenAI(segments) {
-  if (!OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not set.')
+async function rewriteWithXai(segments) {
+  if (!XAI_API_KEY) {
+    throw new Error('XAI_API_KEY is not set.')
   }
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch(`${XAI_API_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      Authorization: `Bearer ${XAI_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model: XAI_MODEL,
       temperature: 1,
       response_format: { type: 'json_object' },
       messages: [
@@ -81,13 +82,13 @@ async function rewriteWithOpenAI(segments) {
 
   if (!response.ok) {
     const text = await response.text()
-    throw new Error(`OpenAI request failed (${response.status}): ${text.slice(0, 300)}`)
+    throw new Error(`xAI request failed (${response.status}): ${text.slice(0, 300)}`)
   }
 
   const data = await response.json()
   const content = data?.choices?.[0]?.message?.content
   if (typeof content !== 'string') {
-    throw new Error('OpenAI response did not include JSON content.')
+    throw new Error('xAI response did not include JSON content.')
   }
 
   let parsed
@@ -113,9 +114,10 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/health') {
     return sendJson(res, 200, {
       ok: true,
-      provider: 'openai',
-      model: OPENAI_MODEL,
-      hasApiKey: Boolean(OPENAI_API_KEY),
+      provider: 'xai',
+      model: XAI_MODEL,
+      hasApiKey: Boolean(XAI_API_KEY),
+      baseUrl: XAI_API_BASE_URL,
     })
   }
 
@@ -123,11 +125,11 @@ const server = createServer(async (req, res) => {
     try {
       const body = await readJson(req)
       const segments = validateSegments(body.segments)
-      const rewritten = await rewriteWithOpenAI(segments)
+      const rewritten = await rewriteWithXai(segments)
       return sendJson(res, 200, {
         segments: rewritten,
-        provider: 'openai',
-        model: OPENAI_MODEL,
+        provider: 'xai',
+        model: XAI_MODEL,
       })
     } catch (error) {
       return sendJson(res, 400, {

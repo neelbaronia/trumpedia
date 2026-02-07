@@ -1,11 +1,17 @@
-# LLM Rewrite Setup
+# xAI Rewrite Setup
 
 ## 1) Set environment variables
 In your shell:
 
 ```bash
-export OPENAI_API_KEY="<your_key>"
-export OPENAI_MODEL="gpt-4.1-mini"
+export XAI_API_KEY="<your_xai_key>"
+export XAI_MODEL="grok-4-1-fast"
+```
+
+Optional API base override:
+
+```bash
+export XAI_API_BASE_URL="https://api.x.ai/v1"
 ```
 
 Optional frontend override (defaults to `http://127.0.0.1:8787/api/rewrite`):
