@@ -1,4 +1,8 @@
 import { createServer } from 'node:http'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+loadLocalEnvFiles()
 
 const PORT = Number(process.env.REWRITE_PORT || 8787)
 const XAI_API_KEY = process.env.XAI_API_KEY
@@ -15,6 +19,49 @@ const SYSTEM_PROMPT = [
   '- Keep roughly similar length per segment.',
   '- Do not add markdown or commentary.',
 ].join('\n')
+
+function loadLocalEnvFiles() {
+  const files = ['.env.local', '.env']
+  for (const file of files) {
+    const fullPath = resolve(process.cwd(), file)
+    if (!existsSync(fullPath)) {
+      continue
+    }
+
+    const content = readFileSync(fullPath, 'utf8')
+    applyEnvContent(content)
+  }
+}
+
+function applyEnvContent(content) {
+  const lines = content.split(/\r?\n/)
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) {
+      continue
+    }
+
+    const index = line.indexOf('=')
+    if (index <= 0) {
+      continue
+    }
+
+    const key = line.slice(0, index).trim()
+    if (!key || process.env[key] !== undefined) {
+      continue
+    }
+
+    let value = line.slice(index + 1).trim()
+    const quoted =
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    if (quoted) {
+      value = value.slice(1, -1)
+    }
+
+    process.env[key] = value
+  }
+}
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
