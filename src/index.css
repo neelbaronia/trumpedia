@@ -152,6 +152,31 @@ a:hover {
   color: #b32424;
 }
 
+.progress-container {
+  margin-top: 1.5rem;
+}
+
+.progress-bar-bg {
+  background: #e2e8f0;
+  border-radius: 999px;
+  height: 0.75rem;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progress-bar-fill {
+  background: #3366cc;
+  height: 100%;
+  transition: width 0.3s ease-out;
+}
+
+.progress-text {
+  color: #54595d;
+  font-size: 0.9rem;
+  margin-top: 0.4rem;
+  text-align: right;
+}
+
 .article-page {
   margin: 1.2rem auto 3rem;
   max-width: 96rem;

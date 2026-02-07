@@ -9,7 +9,7 @@ type ArticleState = {
   html: string
   canonicalUrl: string
   sourceApiUrl: string
-  rewriteMode: 'llm' | 'heuristic'
+  rewriteMode: 'llm' | 'llm-partial' | 'heuristic'
 }
 
 function App() {
@@ -17,6 +17,7 @@ function App() {
   const [status, setStatus] = useState<LoadState>('landing')
   const [error, setError] = useState('')
   const [article, setArticle] = useState<ArticleState | null>(null)
+  const [progress, setProgress] = useState(0)
 
   const loading = status === 'loading'
 
@@ -24,9 +25,10 @@ function App() {
     event.preventDefault()
     setStatus('loading')
     setError('')
+    setProgress(0)
 
     try {
-      const result = await fetchAndRewriteArticle(urlInput)
+      const result = await fetchAndRewriteArticle(urlInput, (p) => setProgress(p))
       setArticle(result)
       setStatus('article')
     } catch (err) {
@@ -88,6 +90,15 @@ function App() {
         <main className="status-page">
           <h2>Loading article</h2>
           <p>Fetching and transforming Wikipedia content.</p>
+          <div className="progress-container">
+            <div className="progress-bar-bg">
+              <div 
+                className="progress-bar-fill" 
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="progress-text">{progress}% processed</p>
+          </div>
         </main>
       )}
 
@@ -114,7 +125,14 @@ function App() {
 
           <p className="disclaimer">
             Satirical rewrite: article structure, links, and media are from Wikipedia. Rewrite mode:{' '}
-            <strong>{article.rewriteMode === 'llm' ? 'LLM (enhanced)' : 'heuristic fallback'}</strong>.
+            <strong>
+              {article.rewriteMode === 'llm'
+                ? 'LLM (enhanced)'
+                : article.rewriteMode === 'llm-partial'
+                  ? 'LLM partial (some fallback)'
+                  : 'heuristic fallback'}
+            </strong>
+            .
           </p>
 
           <article className="mw-content" dangerouslySetInnerHTML={{ __html: article.html }} />

@@ -10,14 +10,14 @@ const XAI_MODEL = process.env.XAI_MODEL || 'grok-4-1-fast'
 const XAI_API_BASE_URL = process.env.XAI_API_BASE_URL || 'https://api.x.ai/v1'
 
 const SYSTEM_PROMPT = [
-  'You rewrite encyclopedia prose into a satirical, bombastic political narrator voice.',
+  'You are Donald Trump, current and greatest President of the United States. You rewrite wikipedia prose to make sure that it is antiwoke, MAGA, and Trumpy. You want it to sound like how you talk and tweet.',
   'Rules:',
   '- Return ONLY valid JSON: {"segments":["...", "..."]}.',
   '- Preserve factual meaning and chronology.',
   '- Keep names, dates, places, and numbers accurate.',
   '- Keep output count exactly equal to input count and same order.',
   '- Keep roughly similar length per segment.',
-  '- Do not add markdown or commentary.',
+  '- Feel free to opine on the topic and add your own thoughts and opinions.',
 ].join('\n')
 
 function loadLocalEnvFiles() {
@@ -169,18 +169,29 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && req.url === '/api/rewrite') {
+    const startTime = Date.now()
     try {
       const body = await readJson(req)
       const segments = validateSegments(body.segments)
+      // eslint-disable-next-line no-console
+      console.log(`[rewrite] request segments=${segments.length} started`)
       const rewritten = await rewriteWithXai(segments)
+      const duration = Date.now() - startTime
+      // eslint-disable-next-line no-console
+      console.log(`[rewrite] request segments=${segments.length} finished in ${duration}ms`)
       return sendJson(res, 200, {
         segments: rewritten,
         provider: 'xai',
         model: XAI_MODEL,
+        duration,
       })
     } catch (error) {
+      const duration = Date.now() - startTime
+      // eslint-disable-next-line no-console
+      console.error(`[rewrite] request failed after ${duration}ms`, error instanceof Error ? error.message : error)
       return sendJson(res, 400, {
         error: error instanceof Error ? error.message : 'Rewrite failed.',
+        duration,
       })
     }
   }

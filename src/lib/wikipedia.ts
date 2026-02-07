@@ -9,7 +9,7 @@ export type WikipediaArticle = {
   html: string
   canonicalUrl: string
   sourceApiUrl: string
-  rewriteMode: 'llm' | 'heuristic'
+  rewriteMode: 'llm' | 'llm-partial' | 'heuristic'
 }
 
 type ParseApiResponse = {
@@ -57,7 +57,8 @@ const SKIP_CLASS_HINTS = [
   'infobox-above',
 ]
 
-const REWRITE_BATCH_SIZE = 40
+const REWRITE_BATCH_SIZE = 20
+const MAX_CONCURRENT_REQUESTS = 6
 const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || 'http://127.0.0.1:8787/api/rewrite'
 
 export function parseWikipediaUrl(input: string): ParsedWikipediaUrl {
@@ -101,7 +102,10 @@ export function parseWikipediaUrl(input: string): ParsedWikipediaUrl {
   }
 }
 
-export async function fetchAndRewriteArticle(inputUrl: string): Promise<WikipediaArticle> {
+export async function fetchAndRewriteArticle(
+  inputUrl: string,
+  onProgress?: (percent: number) => void,
+): Promise<WikipediaArticle> {
   const parsed = parseWikipediaUrl(inputUrl)
   const apiUrl = new URL(`https://${parsed.lang}.wikipedia.org/w/api.php`)
   apiUrl.searchParams.set('action', 'parse')
@@ -126,7 +130,7 @@ export async function fetchAndRewriteArticle(inputUrl: string): Promise<Wikipedi
   }
 
   const normalizedHtml = normalizeWikipediaHtml(parse.text['*'], parsed.lang)
-  const rewritten = await rewriteArticleHtml(normalizedHtml)
+  const rewritten = await rewriteArticleHtml(normalizedHtml, onProgress)
 
   return {
     title: stripHtml(parse.displaytitle || parse.title),
@@ -168,7 +172,10 @@ function normalizeWikipediaHtml(rawHtml: string, lang: string): string {
   return root?.innerHTML || rawHtml
 }
 
-async function rewriteArticleHtml(html: string): Promise<{ html: string; rewriteMode: 'llm' | 'heuristic' }> {
+async function rewriteArticleHtml(
+  html: string,
+  onProgress?: (percent: number) => void,
+): Promise<{ html: string; rewriteMode: 'llm' | 'llm-partial' | 'heuristic' }> {
   const parser = new DOMParser()
   const doc = parser.parseFromString(`<article id="content">${html}</article>`, 'text/html')
   const root = doc.querySelector('#content')
@@ -179,7 +186,7 @@ async function rewriteArticleHtml(html: string): Promise<{ html: string; rewrite
     }
   }
 
-  const targets = collectRewriteTargets(doc, root)
+  const targets = collectRewriteTargets(root)
   if (targets.length === 0) {
     return {
       html: root.innerHTML,
@@ -187,25 +194,16 @@ async function rewriteArticleHtml(html: string): Promise<{ html: string; rewrite
     }
   }
 
-  const llmSucceeded = await applyLlmRewrite(targets)
-  if (!llmSucceeded) {
-    for (const target of targets) {
-      target.node.nodeValue = heuristicRewrite(target.text)
-    }
-    return {
-      html: root.innerHTML,
-      rewriteMode: 'heuristic',
-    }
-  }
-
+  const rewriteMode = await applyLlmRewrite(targets, onProgress)
   return {
     html: root.innerHTML,
-    rewriteMode: 'llm',
+    rewriteMode,
   }
 }
 
-function collectRewriteTargets(doc: Document, root: Element): RewriteTarget[] {
+export function collectRewriteTargets(root: Element): RewriteTarget[] {
   const targets: RewriteTarget[] = []
+  const doc = root.ownerDocument || document
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   let node: Node | null = walker.nextNode()
 
@@ -227,29 +225,73 @@ function collectRewriteTargets(doc: Document, root: Element): RewriteTarget[] {
   return targets
 }
 
-async function applyLlmRewrite(targets: RewriteTarget[]): Promise<boolean> {
-  try {
-    for (let i = 0; i < targets.length; i += REWRITE_BATCH_SIZE) {
-      const batch = targets.slice(i, i + REWRITE_BATCH_SIZE)
+async function applyLlmRewrite(
+  targets: RewriteTarget[],
+  onProgress?: (percent: number) => void,
+): Promise<'llm' | 'llm-partial' | 'heuristic'> {
+  let successCount = 0
+  let failureCount = 0
+  let completedBatches = 0
+
+  const batches: RewriteTarget[][] = []
+  for (let i = 0; i < targets.length; i += REWRITE_BATCH_SIZE) {
+    batches.push(targets.slice(i, i + REWRITE_BATCH_SIZE))
+  }
+
+  const queue = [...batches]
+  const totalBatches = batches.length
+
+  const processNext = async (): Promise<void> => {
+    if (queue.length === 0) return
+    const batch = queue.shift()!
+    try {
       const rewrittenBatch = await rewriteSegmentsWithApi(batch.map((target) => target.text))
       if (!rewrittenBatch || rewrittenBatch.length !== batch.length) {
-        return false
+        throw new Error('invalid rewrite batch')
       }
 
       for (let j = 0; j < batch.length; j += 1) {
         batch[j].node.nodeValue = rewrittenBatch[j]
       }
+      successCount += 1
+    } catch {
+      for (const target of batch) {
+        target.node.nodeValue = heuristicRewrite(target.text)
+      }
+      failureCount += 1
+    } finally {
+      completedBatches += 1
+      if (onProgress) {
+        onProgress(Math.floor((completedBatches / totalBatches) * 100))
+      }
     }
-
-    return true
-  } catch {
-    return false
+    return processNext()
   }
+
+  const workers = Array(Math.min(MAX_CONCURRENT_REQUESTS, batches.length))
+    .fill(null)
+    .map(() => processNext())
+
+  await Promise.all(workers)
+
+  if (successCount > 0 && failureCount === 0) {
+    return 'llm'
+  }
+  if (successCount > 0) {
+    return 'llm-partial'
+  }
+  return 'heuristic'
 }
 
 async function rewriteSegmentsWithApi(segments: string[]): Promise<string[] | null> {
+  const rewritten = await rewriteSegmentsWithApiInternal(segments)
+  return rewritten
+}
+
+async function rewriteSegmentsWithApiInternal(segments: string[]): Promise<string[] | null> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 25000)
+  const timeout = window.setTimeout(() => controller.abort(), 60000)
+  const startTime = Date.now()
 
   try {
     const response = await fetch(REWRITE_API_URL, {
@@ -261,16 +303,45 @@ async function rewriteSegmentsWithApi(segments: string[]): Promise<string[] | nu
       signal: controller.signal,
     })
 
+    const rawBody = await response.text()
+    const duration = Date.now() - startTime
+    
     if (!response.ok) {
+      console.warn(`Rewrite API request failed (${duration}ms)`, {
+        status: response.status,
+        body: rawBody.slice(0, 300),
+      })
       return null
     }
 
-    const payload = (await response.json()) as RewriteApiResponse
+    console.log(`Rewrite API batch of ${segments.length} finished in ${duration}ms`)
+
+    let payload: RewriteApiResponse
+    try {
+      payload = JSON.parse(rawBody) as RewriteApiResponse
+    } catch {
+      console.warn('Rewrite API returned non-JSON body', rawBody.slice(0, 300))
+      return null
+    }
+
     if (!Array.isArray(payload.segments)) {
+      console.warn('Rewrite API missing segments array', rawBody.slice(0, 300))
       return null
     }
 
     return payload.segments.map((value) => String(value))
+  } catch (error) {
+    // If a batch fails, recursively split it to recover partial LLM rewrites.
+    if (segments.length > 1) {
+      const mid = Math.floor(segments.length / 2)
+      const left = await rewriteSegmentsWithApiInternal(segments.slice(0, mid))
+      const right = await rewriteSegmentsWithApiInternal(segments.slice(mid))
+      if (left && right) {
+        return [...left, ...right]
+      }
+    }
+    console.warn('Rewrite API exception', error)
+    return null
   } finally {
     clearTimeout(timeout)
   }
