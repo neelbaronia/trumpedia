@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
+// Trumpedia - Make America Great Again
 export default defineConfig({
   base: '/trumpedia/',
   plugins: [
