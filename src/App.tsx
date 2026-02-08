@@ -18,6 +18,7 @@ function App() {
   const [error, setError] = useState('')
   const [article, setArticle] = useState<ArticleState | null>(null)
   const [progress, setProgress] = useState(0)
+  const [isShaking, setIsShaking] = useState(false)
 
   const loading = status === 'loading'
 
@@ -50,6 +51,14 @@ function App() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    
+    // Validation: Must be a Wikipedia link
+    if (!urlInput.includes('wikipedia.org/wiki/')) {
+      setIsShaking(true)
+      setTimeout(() => setIsShaking(false), 500)
+      return
+    }
+
     handleRewrite(urlInput)
   }
 
@@ -85,11 +94,11 @@ function App() {
           <span className="brand-mark">T</span>
           <span className="brand-text">Trumpedia</span>
         </a>
-        <form className="top-search" onSubmit={onSubmit}>
+        <form className={`top-search ${isShaking ? 'shake' : ''}`} onSubmit={onSubmit}>
           <input
             aria-label="Wikipedia URL"
             type="url"
-            placeholder="Paste a Wikipedia article URL"
+            placeholder="please post an existing wikipedia link"
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             required
@@ -104,11 +113,11 @@ function App() {
         <main className="landing">
           <h1>{pageTitle}</h1>
           <p className="tagline">The free encyclopedia, rewritten with tremendous confidence.</p>
-          <form className="hero-search" onSubmit={onSubmit}>
+          <form className={`hero-search ${isShaking ? 'shake' : ''}`} onSubmit={onSubmit}>
             <input
               aria-label="Paste Wikipedia URL"
               type="url"
-              placeholder="https://en.wikipedia.org/wiki/Article_Title"
+              placeholder="please post an existing wikipedia link"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
               required
