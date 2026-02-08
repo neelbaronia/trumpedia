@@ -2,66 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Trumpedia - Official</title>
-    <style>
-      body { margin: 0; background: #f8f9fa; }
-      #loading-screen {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        font-family: sans-serif;
-      }
-      .logo {
-        background: #c8102e;
-        color: white;
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 40px;
-        font-weight: bold;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-      }
-      h1 { color: #202122; margin: 0; font-size: 24px; }
-      p { color: #54595d; margin-top: 10px; }
-      #debug-info {
-        margin-top: 20px;
-        font-size: 12px;
-        color: #b32424;
-        max-width: 80%;
-        text-align: center;
-      }
-    </style>
+    <title>Trumpedia</title>
   </head>
   <body>
-    <div id="root">
-      <div id="loading-screen">
-        <div class="logo">T</div>
-        <h1>Trumpedia</h1>
-        <p>Initializing tremendous intelligence...</p>
-        <div id="debug-info"></div>
-        <noscript>
-          <p style="color: red;">Please enable JavaScript to use Trumpedia.</p>
-        </noscript>
-      </div>
-    </div>
-    <script>
-      // Fallback check after 8 seconds
-      setTimeout(function() {
-        if (!window.reactLoaded) {
-          document.getElementById('debug-info').innerText = 
-            "The JavaScript failed to load or start. This might be a temporary network issue. Please try refreshing or checking your browser console for errors.";
-          console.error("Trumpedia: React failed to load within 8 seconds.");
-        }
-      }, 8000);
-    </script>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
