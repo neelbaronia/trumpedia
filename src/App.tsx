@@ -99,7 +99,6 @@ function App() {
       {status !== 'landing' && (
         <header className="top-bar">
           <a className="brand" href="#" onClick={() => setStatus('landing')}>
-            <img className="brand-mark" src="/logo.png" alt="T" />
             <span className="brand-text">Trumpedia</span>
           </a>
           <form className={`top-search ${isShaking ? 'shake' : ''}`} onSubmit={onSubmit}>
@@ -130,9 +129,6 @@ function App() {
 
       {status === 'landing' && (
         <main className="landing">
-          <div className="corner-logo">
-            <img src="/logo.png" alt="Trumpedia Logo" />
-          </div>
           <h1>
             <span className="accent">T</span>
             RUMPEDI

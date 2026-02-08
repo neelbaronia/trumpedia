@@ -3,7 +3,7 @@
 :root {
   font-family: Linux Libertine, Georgia, Times, "Times New Roman", serif;
   color: #202122;
-  background: #f8f9fa;
+  background: #ffffff;
 }
 
 * {
@@ -43,19 +43,30 @@ a:hover {
   align-items: center;
   color: #202122;
   display: inline-flex;
-  gap: 0.6rem;
   font-weight: 700;
-}
-
-.brand-mark {
-  height: 2.2rem;
-  width: 2.2rem;
-  object-fit: contain;
-  mix-blend-mode: multiply;
+  text-decoration: none !important;
 }
 
 .brand-text {
-  font-size: 1.3rem;
+  font-size: 1.5rem;
+  background: linear-gradient(
+    to right, 
+    #bf953f 0%, 
+    #fcf6ba 25%, 
+    #b38728 50%, 
+    #fcf6ba 75%, 
+    #aa771c 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.1));
+  transition: all 0.3s ease;
+}
+
+.brand:hover .brand-text {
+  animation: shimmer 2s linear infinite;
+  filter: drop-shadow(0 2px 4px rgba(191, 149, 63, 0.3));
 }
 
 .top-search {
@@ -107,47 +118,117 @@ a:hover {
   position: relative;
 }
 
-.corner-logo {
-  position: absolute;
-  top: 1rem;
-  left: 1rem;
-}
-
-.corner-logo img {
-  height: 60px;
-  width: auto;
-  object-fit: contain;
-  mix-blend-mode: multiply;
-}
-
 .portrait-container {
   margin: 2rem 0;
-  max-width: 300px;
+  max-width: 400px;
   width: 100%;
+  position: relative;
 }
 
 .official-portrait {
-  border: 1px solid #a2a9b1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 24px;
+  background: linear-gradient(
+    135deg, 
+    #bf953f 0%, 
+    #fcf6ba 25%, 
+    #b38728 50%, 
+    #fcf6ba 75%, 
+    #aa771c 100%
+  );
+  background-size: 200% auto;
+  border: 2px solid #5d4a1e;
+  /* Complex decorative frame shadows */
+  box-shadow: 
+    /* Outer deep shadow */
+    0 30px 60px rgba(0, 0, 0, 0.5),
+    /* Gold frame beveling */
+    inset 0 0 0 2px #5d4a1e,
+    inset 0 0 0 6px #bf953f,
+    inset 0 0 0 8px #5d4a1e,
+    /* Inner depth shadow */
+    inset 0 0 30px rgba(0, 0, 0, 0.4);
   height: auto;
   width: 100%;
+  display: block;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+/* Corner Ornaments */
+.portrait-container::after,
+.portrait-container::before {
+  content: "✦";
+  position: absolute;
+  font-size: 24px;
+  color: #5d4a1e;
+  z-index: 6;
+  pointer-events: none;
+  transition: all 0.3s ease;
+  text-shadow: 0 0 10px #fcf6ba;
+}
+
+.portrait-container::before { top: 10px; left: 10px; }
+.portrait-container::after { bottom: 10px; right: 10px; }
+
+/* Adding more corners with a wrapper if needed, but for now let's use these two */
+
+.official-portrait:hover {
+  animation: shimmer 2s linear infinite;
+  transform: scale(1.02);
+  box-shadow: 
+    0 40px 80px rgba(191, 149, 63, 0.4),
+    inset 0 0 0 2px #5d4a1e,
+    inset 0 0 0 6px #fcf6ba,
+    inset 0 0 0 8px #5d4a1e,
+    inset 0 0 40px rgba(0, 0, 0, 0.5);
+}
+
+.portrait-container:hover::before,
+.portrait-container:hover::after {
+  color: #bf953f;
+  transform: scale(1.5) rotate(90deg);
 }
 
 .landing h1 {
   font-family: "Times New Roman", Times, serif;
-  font-size: clamp(2.5rem, 5vw, 4rem);
-  font-weight: 400;
+  font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 800;
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   display: flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.1rem;
+  
+  /* Shiny Gold Text Effect */
+  background: linear-gradient(
+    to right, 
+    #bf953f 0%, 
+    #fcf6ba 25%, 
+    #b38728 50%, 
+    #fcf6ba 75%, 
+    #aa771c 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 3px 3px rgba(0,0,0,0.2));
+  transition: all 0.3s ease;
+}
+
+.landing h1:hover {
+  animation: shimmer 2.5s linear infinite;
+  filter: drop-shadow(0 5px 15px rgba(191, 149, 63, 0.5));
 }
 
 .landing h1 span.accent {
   font-size: 1.4em;
   line-height: 0.8;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
 }
 
 .tagline {
