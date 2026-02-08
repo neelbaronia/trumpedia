@@ -28,7 +28,7 @@ function App() {
   const [isShaking, setIsShaking] = useState(false)
   const [validationError, setValidationError] = useState('')
   const [recentArticles, setRecentArticles] = useState<any[]>([])
-  const [flavorText, setFlavorText] = useState('Fetching and transforming Wikipedia content.')
+  const [flavorTextIndex, setFlavorTextIndex] = useState(0)
 
   const flavorTexts = [
     "Negotiating a better deal with Wikipedia...",
@@ -44,6 +44,17 @@ function App() {
   ]
 
   const loading = status === 'loading'
+
+  // Cycling flavor text during loading
+  useEffect(() => {
+    if (status !== 'loading') return
+
+    const interval = setInterval(() => {
+      setFlavorTextIndex((prev) => (prev + 1) % flavorTexts.length)
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [status, flavorTexts.length])
 
   // Load article from URL parameter on mount
   useEffect(() => {
@@ -79,7 +90,7 @@ function App() {
   async function handleRewrite(input: string) {
     if (!input) return
     setStatus('loading')
-    setFlavorText(flavorTexts[Math.floor(Math.random() * flavorTexts.length)])
+    setFlavorTextIndex(Math.floor(Math.random() * flavorTexts.length))
     setError('')
     setProgress(0)
 
@@ -182,6 +193,7 @@ function App() {
             RUMPEDI
             <span className="accent">A</span>
           </h1>
+          <p className="maga-subtitle">Make Articles Great Again</p>
           <div className="portrait-container">
             <img 
               className="official-portrait"
@@ -360,7 +372,7 @@ function App() {
               {status === 'loading' && (
                 <div className="status-page">
                   <h2>Loading article</h2>
-                  <p>{flavorText}</p>
+                  <p>{flavorTexts[flavorTextIndex]}</p>
                   <div className="progress-container">
                     <div className="progress-bar-bg">
                       <div 

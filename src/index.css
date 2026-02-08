@@ -468,6 +468,17 @@ body {
   line-height: 0.8;
 }
 
+.maga-subtitle {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #5d4a1e;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin-top: -0.5rem;
+  margin-bottom: 1rem;
+}
+
 .portrait-container {
   margin: 1rem 0;
   max-width: 320px;
