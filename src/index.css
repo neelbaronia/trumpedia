@@ -51,6 +51,7 @@ a:hover {
   height: 2.2rem;
   width: 2.2rem;
   object-fit: contain;
+  mix-blend-mode: multiply;
 }
 
 .brand-text {
@@ -116,6 +117,7 @@ a:hover {
   height: 60px;
   width: auto;
   object-fit: contain;
+  mix-blend-mode: multiply;
 }
 
 .portrait-container {
