@@ -27,6 +27,11 @@ function App() {
 
   // Load article from URL parameter on mount
   useEffect(() => {
+    console.log('--- Trumpedia 🇺🇸 Debug ---')
+    console.log('API URL:', import.meta.env.VITE_REWRITE_API_URL || 'http://127.0.0.1:8787/api/rewrite')
+    console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL)
+    console.log('Key Status:', import.meta.env.VITE_SUPABASE_ANON_KEY?.startsWith('sb_publishable') ? '✅ Correct Publishable Key' : '❌ Wrong Key (Use Publishable key from Supabase)')
+    
     const params = new URLSearchParams(window.location.search)
     const initialUrl = params.get('url')
     if (initialUrl) {
@@ -94,13 +99,22 @@ function App() {
       const href = anchor.href
       // Check if it's a Wikipedia link
       if (href.includes('wikipedia.org/wiki/')) {
+        // Skip non-article links like Files, Categories, etc.
+        const isArticle = !href.includes('/wiki/File:') && 
+                         !href.includes('/wiki/Category:') && 
+                         !href.includes('/wiki/Special:') && 
+                         !href.includes('/wiki/Talk:') &&
+                         !href.includes('/wiki/Template:');
+
+        if (!isArticle) return;
+
         event.preventDefault()
         
-        // Construct the new Trumpedia URL with the parameter
-        const currentUrl = new URL(window.location.href)
-        const newTabUrl = `${currentUrl.origin}${currentUrl.pathname}?url=${encodeURIComponent(href)}`
+        // Construct the new URL using current location
+        const targetUrl = new URL(window.location.origin + window.location.pathname);
+        targetUrl.searchParams.set('url', href);
         
-        window.open(newTabUrl, '_blank')
+        window.open(targetUrl.toString(), '_blank');
       }
     }
   }

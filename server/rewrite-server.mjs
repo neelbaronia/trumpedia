@@ -150,8 +150,18 @@ async function rewriteWithXai(segments) {
   }
 
   const rewritten = parsed?.segments
-  if (!Array.isArray(rewritten) || rewritten.length !== segments.length) {
-    throw new Error('Model returned invalid segment count.')
+  if (!Array.isArray(rewritten)) {
+    throw new Error('Model returned invalid response format.')
+  }
+
+  // If the count is wrong, try to pad or trim to match input segments
+  if (rewritten.length !== segments.length) {
+    console.warn(`[rewrite] segment count mismatch: expected ${segments.length}, got ${rewritten.length}. Attempting to fix...`)
+    const fixed = []
+    for (let i = 0; i < segments.length; i++) {
+      fixed.push(rewritten[i] || segments[i]) // Use original if AI missed it
+    }
+    return fixed
   }
 
   return rewritten.map((value) => String(value))
