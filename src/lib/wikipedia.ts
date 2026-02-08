@@ -61,7 +61,7 @@ const SKIP_CLASS_HINTS = [
 
 const REWRITE_BATCH_SIZE = 15
 const MAX_CONCURRENT_REQUESTS = 20
-const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || 'http://127.0.0.1:8787/api/rewrite'
+const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || 'https://yzktkvixqboxmzdtzffb.supabase.co/functions/v1/rewrite'
 
 export function parseWikipediaUrl(input: string): ParsedWikipediaUrl {
   const trimmed = input.trim()
@@ -113,14 +113,18 @@ export async function fetchAndRewriteArticle(
   // 1. Check Cache
   if (supabase) {
     try {
+      const canonical = parsed.canonicalUrl;
+      console.log('--- Cache Check ---')
+      console.log('Target URL:', canonical)
+      
       const { data, error } = await supabase
         .from('articles')
         .select('*')
-        .eq('url', parsed.canonicalUrl)
+        .eq('url', canonical)
         .single()
 
       if (data && !error) {
-        console.log('Serving from cache:', parsed.canonicalUrl)
+        console.log('✅ Serving from cache:', canonical)
         if (onProgress) onProgress(100)
         return {
           title: data.title,
@@ -130,6 +134,7 @@ export async function fetchAndRewriteArticle(
           rewriteMode: data.rewrite_mode,
         }
       }
+      console.log('❌ Cache miss for:', canonical)
     } catch (e) {
       console.warn('Cache check failed:', e)
     }
