@@ -19,6 +19,7 @@ function App() {
   const [article, setArticle] = useState<ArticleState | null>(null)
   const [progress, setProgress] = useState(0)
   const [isShaking, setIsShaking] = useState(false)
+  const [validationError, setValidationError] = useState('')
 
   const loading = status === 'loading'
 
@@ -51,10 +52,12 @@ function App() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setValidationError('')
     
     // Validation: Must be a Wikipedia link
     if (!urlInput.includes('wikipedia.org/wiki/')) {
       setIsShaking(true)
+      setValidationError('Please provide a valid Wikipedia article link.')
       setTimeout(() => setIsShaking(false), 500)
       return
     }
@@ -89,39 +92,69 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="top-bar">
-        <a className="brand" href="#" onClick={() => setStatus('landing')}>
-          <span className="brand-mark">T</span>
-          <span className="brand-text">Trumpedia</span>
-        </a>
-        <form className={`top-search ${isShaking ? 'shake' : ''}`} onSubmit={onSubmit}>
-          <input
-            aria-label="Wikipedia URL"
-            type="url"
-            placeholder="please post an existing wikipedia link"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            required
-          />
-          <button type="submit" disabled={loading}>
-            {loading ? 'Loading...' : 'Rewrite'}
-          </button>
-        </form>
-      </header>
+      {status !== 'landing' && (
+        <header className="top-bar">
+          <a className="brand" href="#" onClick={() => setStatus('landing')}>
+            <img className="brand-mark" src="/logo.png" alt="T" />
+            <span className="brand-text">Trumpedia</span>
+          </a>
+          <form className={`top-search ${isShaking ? 'shake' : ''}`} onSubmit={onSubmit}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <input
+                aria-label="Wikipedia URL"
+                type="url"
+                placeholder="please post an existing wikipedia link"
+                value={urlInput}
+                onChange={(e) => {
+                  setUrlInput(e.target.value)
+                  if (validationError) setValidationError('')
+                }}
+                required
+              />
+              {validationError && (
+                <span style={{ color: '#b32424', fontSize: '0.8rem', marginTop: '0.2rem' }}>
+                  {validationError}
+                </span>
+              )}
+            </div>
+            <button type="submit" disabled={loading}>
+              {loading ? 'Loading...' : 'Rewrite'}
+            </button>
+          </form>
+        </header>
+      )}
 
       {status === 'landing' && (
         <main className="landing">
+          <img src="/logo.png" alt="Trumpedia Logo" style={{ height: '120px', marginBottom: '1rem' }} />
           <h1>{pageTitle}</h1>
+          <div className="portrait-container">
+            <img 
+              className="official-portrait"
+              src="https://upload.wikimedia.org/wikipedia/commons/5/56/Donald_Trump_official_portrait.jpg" 
+              alt="Official Portrait of Donald J. Trump"
+            />
+          </div>
           <p className="tagline">The free encyclopedia, rewritten with tremendous confidence.</p>
           <form className={`hero-search ${isShaking ? 'shake' : ''}`} onSubmit={onSubmit}>
-            <input
-              aria-label="Paste Wikipedia URL"
-              type="url"
-              placeholder="please post an existing wikipedia link"
-              value={urlInput}
-              onChange={(e) => setUrlInput(e.target.value)}
-              required
-            />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+              <input
+                aria-label="Paste Wikipedia URL"
+                type="url"
+                placeholder="please post an existing wikipedia link"
+                value={urlInput}
+                onChange={(e) => {
+                  setUrlInput(e.target.value)
+                  if (validationError) setValidationError('')
+                }}
+                required
+              />
+              {validationError && (
+                <span style={{ color: '#b32424', fontSize: '0.9rem', marginTop: '0.4rem', fontWeight: 'bold' }}>
+                  {validationError}
+                </span>
+              )}
+            </div>
             <button type="submit" disabled={loading}>
               {loading ? 'Rewriting...' : 'Rewrite this page'}
             </button>
