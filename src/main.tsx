@@ -1,26 +1,29 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
 
-console.log("main.tsx: Starting React initialization");
+function SimpleApp() {
+  return (
+    <div style={{ padding: '20px', textAlign: 'center', fontFamily: 'sans-serif' }}>
+      <h1 style={{ color: '#c8102e' }}>Trumpedia is Live!</h1>
+      <p>The app has initialized successfully.</p>
+      <button 
+        onClick={() => window.location.reload()}
+        style={{ padding: '10px 20px', background: '#3366cc', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+      >
+        Refresh Page
+      </button>
+    </div>
+  )
+}
+
+console.log("main.tsx: Starting minimal initialization");
 
 const rootElement = document.getElementById('root');
-
-if (!rootElement) {
-  console.error("main.tsx: Root element not found!");
-  alert("Root element not found!");
+if (rootElement) {
+  const root = createRoot(rootElement);
+  root.render(<SimpleApp />);
+  console.log("main.tsx: Minimal render called");
 } else {
-  try {
-    const root = createRoot(rootElement);
-    root.render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>
-    );
-    console.log("main.tsx: React render called");
-  } catch (err) {
-    console.error("main.tsx: Render error", err);
-    alert("Render error: " + err);
-  }
+  alert("Root element not found!");
 }

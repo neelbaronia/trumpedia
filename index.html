@@ -5,6 +5,17 @@
     <link rel="icon" type="image/svg+xml" href="/trumpedia/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trumpedia</title>
+    <script>
+      // Global error handler - move to top
+      window.onerror = function(msg, url, lineNo, columnNo, error) {
+        alert('JS Error: ' + msg + '\nURL: ' + url + '\nLine: ' + lineNo);
+        return false;
+      };
+      window.onunhandledrejection = function(event) {
+        alert('Promise Rejection: ' + event.reason);
+      };
+      console.log("HTML: Error handlers initialized");
+    </script>
     <style>
       #debug-root {
         position: fixed;
@@ -25,26 +36,11 @@
     <div id="root">
       <div style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;">
         <div style="text-align: center;">
-          <h1 style="color: #c8102e;">Trumpedia</h1>
-          <p>Loading the greatest encyclopedia...</p>
+          <h1 style="color: #c8102e; font-size: 3rem;">Trumpedia</h1>
+          <p style="font-size: 1.2rem;">Establishing tremendous connection...</p>
         </div>
       </div>
     </div>
-    
-    <script>
-      // Global error handler to help us see what's wrong
-      window.onerror = function(msg, url, lineNo, columnNo, error) {
-        var debug = document.getElementById('debug-root');
-        debug.style.display = 'block';
-        debug.innerHTML = '<b>Error:</b> ' + msg + '<br><small>' + url + ' L' + lineNo + ':' + columnNo + '</small>';
-        return false;
-      };
-      window.onunhandledrejection = function(event) {
-        var debug = document.getElementById('debug-root');
-        debug.style.display = 'block';
-        debug.innerHTML = '<b>Promise Error:</b> ' + event.reason;
-      };
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
