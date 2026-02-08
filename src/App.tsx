@@ -87,8 +87,12 @@ function App() {
 
   const pageTitle = useMemo(() => {
     if (article) return `${article.title} - Trumpedia`
-    return 'Trumpedia'
+    return 'TRUMPEDIA'
   }, [article])
+
+  useEffect(() => {
+    document.title = pageTitle
+  }, [pageTitle])
 
   return (
     <div className="app-shell">
