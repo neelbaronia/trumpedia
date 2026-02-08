@@ -152,9 +152,6 @@ function App() {
               <a href={article.canonicalUrl} target="_blank" rel="noreferrer">
                 View original Wikipedia page
               </a>
-              <a href={article.sourceApiUrl} target="_blank" rel="noreferrer">
-                View source API call
-              </a>
             </div>
           </div>
 
