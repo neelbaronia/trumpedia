@@ -11,12 +11,11 @@ The official plan for the greatest encyclopedia in history.
 - [x] **Performance Pack**: Parallel batch processing (20 concurrent requests) and progress tracking.
 - [x] **Authentic Styling**: Updated UI to match Wikipedia's original header fonts and weights.
 - [x] **Deep Linking**: Added `?url=` support for sharing and natural link browsing.
+- [x] **Custom Domain**: Successfully launched at **trumpedia.org** 🇺🇸.
 
 ## 🚀 Priority Tasks
-- [ ] **Hosting & Domain**:
-    - Configure custom domain `trumpedia.org`.
 - [ ] **Persistence & Caching**:
-    - Implement article storage to avoid redundant Grok API calls.
+    - Implement article storage (Supabase DB) to avoid redundant Grok API calls.
     - Add a "Recently Trumpified" list to the landing page.
 - [ ] **Trump Score**:
     - Calculate degrees of separation from the Donald Trump Wikipedia page.

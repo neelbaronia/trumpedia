@@ -5,10 +5,9 @@ import tailwindcss from '@tailwindcss/vite'
 // https://vite.dev/config/
 // Trumpedia - Make America Great Again
 export default defineConfig({
-  // When deploying to a custom domain, we use '/' as the base.
-  // GitHub Pages usually hosts at neelbaronia.github.io/trumpedia/,
-  // but trumpedia.org will point to the root.
-  base: '/',
+  // Using an empty string for base makes all asset paths relative (./assets/...)
+  // This ensures the site works on both neelbaronia.github.io/trumpedia/ AND trumpedia.org
+  base: '',
   plugins: [
     react(),
     tailwindcss(),
