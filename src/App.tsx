@@ -13,6 +13,12 @@ type ArticleState = {
   rewriteMode: 'llm' | 'llm-partial' | 'heuristic'
 }
 
+type TOCItem = {
+  id: string
+  text: string
+  level: number
+}
+
 function App() {
   const [urlInput, setUrlInput] = useState('')
   const [status, setStatus] = useState<LoadState>('landing')
@@ -128,39 +134,32 @@ function App() {
     document.title = pageTitle
   }, [pageTitle])
 
+  const toc = useMemo<TOCItem[]>(() => {
+    if (!article || status !== 'article') return []
+    
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(article.html, 'text/html')
+    const headers = Array.from(doc.querySelectorAll('h2, h3, h4'))
+    
+    return headers.map((header, index) => {
+      // Wikipedia usually puts the ID on a span inside the header, or the header itself
+      const id = header.id || 
+                 header.querySelector('.mw-headline')?.id || 
+                 `section-${index}`;
+                 
+      // If the header doesn't have an ID, we should probably add one to the actual rendered HTML too
+      // but for now let's just extract what's there.
+      
+      return {
+        id,
+        text: header.textContent?.replace('[edit]', '').trim() || '',
+        level: parseInt(header.tagName.substring(1))
+      }
+    }).filter(item => item.text.length > 0)
+  }, [article, status])
+
   return (
     <div className="app-shell">
-      {status !== 'landing' && (
-        <header className="top-bar">
-          <a className="brand" href="#" onClick={() => setStatus('landing')}>
-            <span className="brand-text">Trumpedia</span>
-          </a>
-          <form className={`top-search ${isShaking ? 'shake' : ''}`} onSubmit={onSubmit}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <input
-                aria-label="Wikipedia URL"
-                type="url"
-                placeholder="please post an existing wikipedia link"
-                value={urlInput}
-                onChange={(e) => {
-                  setUrlInput(e.target.value)
-                  if (validationError) setValidationError('')
-                }}
-                required
-              />
-              {validationError && (
-                <span style={{ color: '#b32424', fontSize: '0.8rem', marginTop: '0.2rem' }}>
-                  {validationError}
-                </span>
-              )}
-            </div>
-            <button type="submit" disabled={loading}>
-              {loading ? 'Loading...' : 'Rewrite'}
-            </button>
-          </form>
-        </header>
-      )}
-
       {status === 'landing' && (
         <main className="landing">
           <h1>
@@ -204,68 +203,180 @@ function App() {
           {recentArticles.length > 0 && (
             <div className="recent-section">
               <h3>Recently Trumpified</h3>
-              <div className="recent-list">
-                {recentArticles.map((art) => (
-                  <a 
-                    key={art.url} 
-                    href={`?url=${encodeURIComponent(art.url)}`}
-                    className="recent-item"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      setUrlInput(art.url)
-                      handleRewrite(art.url)
-                    }}
-                  >
-                    {art.title}
-                  </a>
-                ))}
+              <div className="recent-list-container">
+                <div className="recent-list">
+                  {[...recentArticles, ...recentArticles].map((art, idx) => (
+                    <a 
+                      key={`${art.url}-${idx}`} 
+                      href={`?url=${encodeURIComponent(art.url)}`}
+                      className="recent-item"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setUrlInput(art.url)
+                        handleRewrite(art.url)
+                      }}
+                    >
+                      {art.title}
+                    </a>
+                  ))}
+                </div>
               </div>
             </div>
           )}
         </main>
       )}
 
-      {status === 'loading' && (
-        <main className="status-page">
-          <h2>Loading article</h2>
-          <p>Fetching and transforming Wikipedia content.</p>
-          <div className="progress-container">
-            <div className="progress-bar-bg">
-              <div 
-                className="progress-bar-fill" 
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="progress-text">{progress}% processed</p>
-          </div>
-        </main>
-      )}
-
-      {status === 'error' && (
-        <main className="status-page error">
-          <h2>Could not load article</h2>
-          <p>{error}</p>
-        </main>
-      )}
-
-      {status === 'article' && article && (
-        <main className="article-page">
-          <div className="article-header">
-            <h1>{article.title}</h1>
-            <div className="article-links">
-              <a href={article.canonicalUrl} target="_blank" rel="noreferrer">
-                View original Wikipedia page
+      {status !== 'landing' && (
+        <>
+          <header className="top-bar">
+            <div className="top-bar-left">
+              <a className="brand" href="#" onClick={() => setStatus('landing')}>
+                <span className="brand-text">
+                  <span className="accent">T</span>RUMPEDI<span className="accent">A</span>
+                </span>
               </a>
             </div>
+            <form className={`top-search ${isShaking ? 'shake' : ''}`} onSubmit={onSubmit}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <input
+                  aria-label="Wikipedia URL"
+                  type="url"
+                  placeholder="please post an existing wikipedia link"
+                  value={urlInput}
+                  onChange={(e) => {
+                    setUrlInput(e.target.value)
+                    if (validationError) setValidationError('')
+                  }}
+                  required
+                />
+                {validationError && (
+                  <span style={{ color: '#b32424', fontSize: '0.8rem', marginTop: '0.2rem' }}>
+                    {validationError}
+                  </span>
+                )}
+              </div>
+              <button type="submit" disabled={loading}>
+                {loading ? 'Loading...' : 'Rewrite'}
+              </button>
+            </form>
+            <div className="top-bar-right">
+              <a href="#">Donate</a>
+            </div>
+          </header>
+
+          <div className="wiki-tabs-container">
+            <div className="wiki-tabs">
+              <div className="wiki-tab active">Article</div>
+            </div>
+            <div className="wiki-tabs">
+              <div className="wiki-tab active">Read</div>
+              <div className="wiki-tab">Edit</div>
+              <div className="wiki-tab">View history</div>
+            </div>
           </div>
 
-          <article 
-            className="mw-content" 
-            dangerouslySetInnerHTML={{ __html: article.html }} 
-            onClick={onContentClick}
-          />
-        </main>
+          <div className="wiki-wrapper">
+            <aside className="wiki-sidebar">
+              <div className="sidebar-section">
+                <h3>Contents</h3>
+                {toc.length > 0 ? (
+                  <ul className="toc-list">
+                    <li className="toc-item toc-level-1">
+                      <a href="#" onClick={(e) => {
+                        e.preventDefault()
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                      }}>
+                        (Top)
+                      </a>
+                    </li>
+                    {toc.map((item, idx) => (
+                      <li key={`${item.id}-${idx}`} className={`toc-item toc-level-${item.level}`}>
+                        <a 
+                          href={`#${item.id}`}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            const el = document.getElementById(item.id) || 
+                                     document.getElementsByName(item.id)[0] ||
+                                     document.querySelector(`[id="${item.id}"]`);
+                            if (el) {
+                              const offset = 70; // Account for sticky headers if any
+                              const bodyRect = document.body.getBoundingClientRect().top;
+                              const elementRect = el.getBoundingClientRect().top;
+                              const elementPosition = elementRect - bodyRect;
+                              const offsetPosition = elementPosition - offset;
+
+                              window.scrollTo({
+                                top: offsetPosition,
+                                behavior: 'smooth'
+                              });
+                            }
+                          }}
+                        >
+                          {item.text}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p style={{ color: '#54595d', fontStyle: 'italic' }}>No sections found.</p>
+                )}
+              </div>
+              <div className="sidebar-section" style={{ marginTop: '2rem' }}>
+                <h3>Navigation</h3>
+                <ul>
+                  <li><a href="#" onClick={(e) => { e.preventDefault(); setStatus('landing') }}>Main page</a></li>
+                  <li><a href="#">Contents</a></li>
+                  <li><a href="#">Current events</a></li>
+                  <li><a href="#">Random article</a></li>
+                </ul>
+              </div>
+            </aside>
+
+            <main className="wiki-content-container">
+              {status === 'loading' && (
+                <div className="status-page">
+                  <h2>Loading article</h2>
+                  <p>Fetching and transforming Wikipedia content.</p>
+                  <div className="progress-container">
+                    <div className="progress-bar-bg">
+                      <div 
+                        className="progress-bar-fill" 
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                    <p className="progress-text">{progress}% processed</p>
+                  </div>
+                </div>
+              )}
+
+              {status === 'error' && (
+                <div className="status-page error">
+                  <h2>Could not load article</h2>
+                  <p>{error}</p>
+                </div>
+              )}
+
+              {status === 'article' && article && (
+                <div className="article-page">
+                  <div className="article-header">
+                    <h1>{article.title}</h1>
+                  </div>
+
+                  <article 
+                    className="mw-content vector-body" 
+                    dangerouslySetInnerHTML={{ __html: article.html }} 
+                    onClick={onContentClick}
+                  />
+                </div>
+              )}
+            </main>
+          </div>
+        </>
       )}
+      
+      <footer className="site-footer">
+        Made with ❤️, 🤖, and 😎 by <a href="https://github.com/nbaronia" target="_blank" rel="noopener noreferrer">nbaronia</a>
+      </footer>
     </div>
   )
 }

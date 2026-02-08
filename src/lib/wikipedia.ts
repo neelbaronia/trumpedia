@@ -307,7 +307,21 @@ async function applyLlmRewrite(
       }
 
       for (let j = 0; j < batch.length; j += 1) {
-        batch[j].node.nodeValue = rewrittenBatch[j]
+        const originalText = batch[j].text
+        let rewrittenText = rewrittenBatch[j]
+
+        // Preserve leading/trailing whitespace that LLMs often trim
+        const leadingSpace = originalText.match(/^\s*/)?.[0] || ''
+        const trailingSpace = originalText.match(/\s*$/)?.[0] || ''
+        
+        if (leadingSpace && !rewrittenText.startsWith(leadingSpace)) {
+          rewrittenText = leadingSpace + rewrittenText.trimStart()
+        }
+        if (trailingSpace && !rewrittenText.endsWith(trailingSpace)) {
+          rewrittenText = rewrittenText.trimEnd() + trailingSpace
+        }
+
+        batch[j].node.nodeValue = rewrittenText
       }
       successCount += 1
     } catch {

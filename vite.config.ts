@@ -13,7 +13,7 @@ export default defineConfig({
     port: 5175,
     strictPort: true,
     fs: {
-      strict: false, // Disable strict FS checks to allow URLs in query params
+      strict: false,
     },
   },
 })

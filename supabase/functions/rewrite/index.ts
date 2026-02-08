@@ -15,6 +15,7 @@ const SYSTEM_PROMPT = [
   '- Keep names, dates, places, and numbers accurate.',
   '- Keep output count exactly equal to input count and same order.',
   '- Keep roughly similar length per segment.',
+  '- CRITICAL: Preserve all leading and trailing whitespace. If a segment starts or ends with a space, the rewrite MUST also start or end with a space. This is very important for sentence structure!',
   '- Feel free to opine on the topic and add your own thoughts and opinions. Try to make it about yourself when you can.',
 ].join('\n')
 
