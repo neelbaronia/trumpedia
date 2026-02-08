@@ -59,7 +59,7 @@ const SKIP_CLASS_HINTS = [
 
 const REWRITE_BATCH_SIZE = 15
 const MAX_CONCURRENT_REQUESTS = 20
-const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || 'http://127.0.0.1:8787/api/rewrite'
+const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || 'https://yzktkvixqboxmzdtzffb.supabase.co/functions/v1/rewrite'
 
 export function parseWikipediaUrl(input: string): ParsedWikipediaUrl {
   const trimmed = input.trim()
