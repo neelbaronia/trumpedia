@@ -14,8 +14,9 @@ The official plan for the greatest encyclopedia in history.
 - [x] **Custom Domain**: Successfully launched at **trumpedia.org** 🇺🇸.
 
 ## 🚀 Priority Tasks
-- [ ] **Persistence & Caching**:
+- [x] **Persistence & Caching**:
     - Implement article storage (Supabase DB) to avoid redundant Grok API calls.
+- [x] **Recently Trumpified List**:
     - Add a "Recently Trumpified" list to the landing page.
 - [ ] **Trump Score**:
     - Calculate degrees of separation from the Donald Trump Wikipedia page.

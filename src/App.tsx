@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import { fetchAndRewriteArticle } from './lib/wikipedia'
+import { supabase } from './lib/supabase'
 
 type LoadState = 'landing' | 'loading' | 'article' | 'error'
 
@@ -20,6 +21,7 @@ function App() {
   const [progress, setProgress] = useState(0)
   const [isShaking, setIsShaking] = useState(false)
   const [validationError, setValidationError] = useState('')
+  const [recentArticles, setRecentArticles] = useState<any[]>([])
 
   const loading = status === 'loading'
 
@@ -31,7 +33,23 @@ function App() {
       setUrlInput(initialUrl)
       handleRewrite(initialUrl)
     }
+
+    // Fetch recent articles
+    fetchRecentArticles()
   }, [])
+
+  async function fetchRecentArticles() {
+    if (!supabase) return
+    const { data } = await supabase
+      .from('articles')
+      .select('url, title')
+      .order('created_at', { ascending: false })
+      .limit(5)
+    
+    if (data) {
+      setRecentArticles(data)
+    }
+  }
 
   async function handleRewrite(input: string) {
     if (!input) return
@@ -43,6 +61,8 @@ function App() {
       const result = await fetchAndRewriteArticle(input, (p) => setProgress(p))
       setArticle(result)
       setStatus('article')
+      // Refresh recent articles after a successful rewrite
+      fetchRecentArticles()
     } catch (err) {
       setStatus('error')
       setArticle(null)
@@ -166,6 +186,28 @@ function App() {
             </button>
           </form>
           <p className="helper">Links and images are preserved from the original article.</p>
+
+          {recentArticles.length > 0 && (
+            <div className="recent-section">
+              <h3>Recently Trumpified</h3>
+              <div className="recent-list">
+                {recentArticles.map((art) => (
+                  <a 
+                    key={art.url} 
+                    href={`?url=${encodeURIComponent(art.url)}`}
+                    className="recent-item"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      setUrlInput(art.url)
+                      handleRewrite(art.url)
+                    }}
+                  >
+                    {art.title}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </main>
       )}
 

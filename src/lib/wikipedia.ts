@@ -1,3 +1,5 @@
+import { supabase } from './supabase'
+
 export type ParsedWikipediaUrl = {
   lang: string
   title: string
@@ -107,6 +109,32 @@ export async function fetchAndRewriteArticle(
   onProgress?: (percent: number) => void,
 ): Promise<WikipediaArticle> {
   const parsed = parseWikipediaUrl(inputUrl)
+
+  // 1. Check Cache
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('articles')
+        .select('*')
+        .eq('url', parsed.canonicalUrl)
+        .single()
+
+      if (data && !error) {
+        console.log('Serving from cache:', parsed.canonicalUrl)
+        if (onProgress) onProgress(100)
+        return {
+          title: data.title,
+          html: data.html,
+          canonicalUrl: data.url,
+          sourceApiUrl: data.source_api_url,
+          rewriteMode: data.rewrite_mode,
+        }
+      }
+    } catch (e) {
+      console.warn('Cache check failed:', e)
+    }
+  }
+
   const apiUrl = new URL(`https://${parsed.lang}.wikipedia.org/w/api.php`)
   apiUrl.searchParams.set('action', 'parse')
   apiUrl.searchParams.set('format', 'json')
@@ -132,13 +160,36 @@ export async function fetchAndRewriteArticle(
   const normalizedHtml = normalizeWikipediaHtml(parse.text['*'], parsed.lang)
   const rewritten = await rewriteArticleHtml(normalizedHtml, onProgress)
 
-  return {
+  const result: WikipediaArticle = {
     title: stripHtml(parse.displaytitle || parse.title),
     html: rewritten.html,
     canonicalUrl: parsed.canonicalUrl,
     sourceApiUrl: apiUrl.toString(),
     rewriteMode: rewritten.rewriteMode,
   }
+
+  // 2. Save to Cache
+  if (supabase && (rewritten.rewriteMode === 'llm' || rewritten.rewriteMode === 'llm-partial')) {
+    try {
+      console.log('Attempting to cache article:', result.canonicalUrl)
+      const { data, error } = await supabase.from('articles').upsert({
+        url: result.canonicalUrl,
+        title: result.title,
+        html: result.html,
+        rewrite_mode: result.rewriteMode,
+        source_api_url: result.sourceApiUrl,
+      })
+      if (error) {
+        console.error('Supabase upsert error:', error)
+      } else {
+        console.log('Successfully cached article:', data)
+      }
+    } catch (e) {
+      console.warn('Failed to save to cache:', e)
+    }
+  }
+
+  return result
 }
 
 function normalizeWikipediaHtml(rawHtml: string, lang: string): string {

@@ -248,6 +248,49 @@ a:hover {
   margin-top: 0.9rem;
 }
 
+.recent-section {
+  margin-top: 3rem;
+  width: 100%;
+  max-width: 48rem;
+  border-top: 1px solid #a2a9b1;
+  padding-top: 1.5rem;
+}
+
+.recent-section h3 {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 1.4rem;
+  color: #5d4a1e;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.recent-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.8rem;
+}
+
+.recent-item {
+  background: #fff;
+  border: 1px solid #bf953f;
+  border-radius: 4px;
+  color: #5d4a1e !important;
+  font-size: 0.95rem;
+  padding: 0.4rem 0.8rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.recent-item:hover {
+  background: linear-gradient(135deg, #bf953f, #fcf6ba);
+  color: #000 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(191, 149, 63, 0.3);
+  text-decoration: none !important;
+}
+
 .status-page {
   margin: 2.5rem auto;
   max-width: 52rem;
