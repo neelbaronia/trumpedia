@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { FormEvent, MouseEvent } from 'react'
 import { fetchAndRewriteArticle } from './lib/wikipedia'
 
 console.log("Trumpedia App Loaded Successfully");
@@ -58,7 +58,7 @@ function App() {
   }
 
   // Intercept clicks on Wikipedia links
-  function onContentClick(event: React.MouseEvent<HTMLElement>) {
+  function onContentClick(event: MouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement
     const anchor = target.closest('a')
     
