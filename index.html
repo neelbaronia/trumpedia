@@ -5,14 +5,6 @@
     <link rel="icon" type="image/svg+xml" href="vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trumpedia - Official</title>
-    <script>
-      // EMERGENCY ALERT - If this doesn't show, the script isn't even parsing
-      console.log("Trumpedia: HTML Head parsing start");
-      window.onerror = function(msg, url, line) {
-        alert("JS Error: " + msg + "\nAt: " + url + ":" + line);
-        return false;
-      };
-    </script>
     <style>
       body { margin: 0; background: #f8f9fa; }
       #loading-screen {
@@ -39,6 +31,13 @@
       }
       h1 { color: #202122; margin: 0; font-size: 24px; }
       p { color: #54595d; margin-top: 10px; }
+      #debug-info {
+        margin-top: 20px;
+        font-size: 12px;
+        color: #b32424;
+        max-width: 80%;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -47,12 +46,22 @@
         <div class="logo">T</div>
         <h1>Trumpedia</h1>
         <p>Initializing tremendous intelligence...</p>
+        <div id="debug-info"></div>
         <noscript>
           <p style="color: red;">Please enable JavaScript to use Trumpedia.</p>
         </noscript>
       </div>
     </div>
-    <!-- Note: no leading slash to stay relative -->
-    <script type="module" src="src/main.tsx"></script>
+    <script>
+      // Fallback check after 8 seconds
+      setTimeout(function() {
+        if (!window.reactLoaded) {
+          document.getElementById('debug-info').innerText = 
+            "The JavaScript failed to load or start. This might be a temporary network issue. Please try refreshing or checking your browser console for errors.";
+          console.error("Trumpedia: React failed to load within 8 seconds.");
+        }
+      }, 8000);
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
