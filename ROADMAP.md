@@ -13,8 +13,8 @@ The official plan for the greatest encyclopedia in history.
 
 ## 🚀 Priority Tasks
 - [ ] **Hosting & Domain**:
+    - Deploy the rewrite server as a **Supabase Edge Function**.
     - Configure custom domain `trumpedia.org`.
-    - Deploy the rewrite server to production (Railway/VPS).
 - [ ] **Persistence & Caching**:
     - Implement article storage to avoid redundant Grok API calls.
     - Add a "Recently Trumpified" list to the landing page.

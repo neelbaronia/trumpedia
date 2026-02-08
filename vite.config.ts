@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 // https://vite.dev/config/
 // Trumpedia - Make America Great Again
 export default defineConfig({
-  base: '/trumpedia/',
+  base: './',
   plugins: [
     react(),
     tailwindcss(),

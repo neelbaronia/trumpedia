@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { fetchAndRewriteArticle } from './lib/wikipedia'
 
@@ -23,6 +23,16 @@ function App() {
 
   const loading = status === 'loading'
 
+  // Load article from URL parameter on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const initialUrl = params.get('url')
+    if (initialUrl) {
+      setUrlInput(initialUrl)
+      handleRewrite(initialUrl)
+    }
+  }, [])
+
   async function handleRewrite(input: string) {
     if (!input) return
     setStatus('loading')
@@ -43,6 +53,26 @@ function App() {
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     handleRewrite(urlInput)
+  }
+
+  // Intercept clicks on Wikipedia links
+  function onContentClick(event: React.MouseEvent<HTMLElement>) {
+    const target = event.target as HTMLElement
+    const anchor = target.closest('a')
+    
+    if (anchor && anchor.href) {
+      const href = anchor.href
+      // Check if it's a Wikipedia link
+      if (href.includes('wikipedia.org/wiki/')) {
+        event.preventDefault()
+        
+        // Construct the new Trumpedia URL with the parameter
+        const currentUrl = new URL(window.location.href)
+        const newTabUrl = `${currentUrl.origin}${currentUrl.pathname}?url=${encodeURIComponent(href)}`
+        
+        window.open(newTabUrl, '_blank')
+      }
+    }
   }
 
   const pageTitle = useMemo(() => {
@@ -130,7 +160,11 @@ function App() {
             </div>
           </div>
 
-          <article className="mw-content" dangerouslySetInnerHTML={{ __html: article.html }} />
+          <article 
+            className="mw-content" 
+            dangerouslySetInnerHTML={{ __html: article.html }} 
+            onClick={onContentClick}
+          />
         </main>
       )}
     </div>
