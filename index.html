@@ -2,12 +2,49 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/trumpedia/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>trumpedia</title>
+    <title>Trumpedia</title>
+    <style>
+      #debug-root {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background: #c8102e;
+        color: white;
+        padding: 10px;
+        font-family: sans-serif;
+        z-index: 9999;
+        display: none;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="src/main.tsx"></script>
+    <div id="debug-root"></div>
+    <div id="root">
+      <div style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;">
+        <div style="text-align: center;">
+          <h1 style="color: #c8102e;">Trumpedia</h1>
+          <p>Loading the greatest encyclopedia...</p>
+        </div>
+      </div>
+    </div>
+    
+    <script>
+      // Global error handler to help us see what's wrong
+      window.onerror = function(msg, url, lineNo, columnNo, error) {
+        var debug = document.getElementById('debug-root');
+        debug.style.display = 'block';
+        debug.innerHTML = '<b>Error:</b> ' + msg + '<br><small>' + url + ' L' + lineNo + ':' + columnNo + '</small>';
+        return false;
+      };
+      window.onunhandledrejection = function(event) {
+        var debug = document.getElementById('debug-root');
+        debug.style.display = 'block';
+        debug.innerHTML = '<b>Promise Error:</b> ' + event.reason;
+      };
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
