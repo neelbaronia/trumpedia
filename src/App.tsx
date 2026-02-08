@@ -141,7 +141,7 @@ function App() {
           <div className="portrait-container">
             <img 
               className="official-portrait"
-              src="https://upload.wikimedia.org/wikipedia/commons/5/56/Donald_Trump_official_portrait.jpg" 
+              src="https://upload.wikimedia.org/wikipedia/commons/6/6f/Official_Presidential_Portrait_of_President_Donald_J._Trump_%282025%29_%28cropped%29.jpg" 
               alt="Official Portrait of Donald J. Trump"
             />
           </div>
