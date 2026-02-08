@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import { fetchAndRewriteArticle } from './lib/wikipedia'
 
-console.log("Trumpedia App Loaded Successfully");
-
 type LoadState = 'landing' | 'loading' | 'article' | 'error'
 
 type ArticleState = {
@@ -25,11 +23,9 @@ function App() {
 
   // Load article from URL parameter on mount
   useEffect(() => {
-    console.log("App.tsx: Component mounted");
     const params = new URLSearchParams(window.location.search)
     const initialUrl = params.get('url')
     if (initialUrl) {
-      console.log("App.tsx: Initial URL found:", initialUrl);
       setUrlInput(initialUrl)
       handleRewrite(initialUrl)
     }
