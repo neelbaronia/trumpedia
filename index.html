@@ -2,16 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trumpedia - Official</title>
     <script>
-      // EMERGENCY LOGGING
-      window.onerror = function(msg, url, line, col, error) {
-        alert("CRITICAL JS ERROR: " + msg + "\nAt: " + url + ":" + line);
+      // EMERGENCY ALERT - If this doesn't show, the script isn't even parsing
+      console.log("Trumpedia: HTML Head parsing start");
+      window.onerror = function(msg, url, line) {
+        alert("JS Error: " + msg + "\nAt: " + url + ":" + line);
         return false;
       };
-      console.log("Trumpedia: HTML Head parsed");
     </script>
     <style>
       body { margin: 0; background: #f8f9fa; }
@@ -52,15 +52,7 @@
         </noscript>
       </div>
     </div>
-    <script type="module" src="/src/main.tsx"></script>
-    <script>
-      console.log("Trumpedia: Scripts injected");
-      setTimeout(function() {
-        var root = document.getElementById('root');
-        if (root && root.innerHTML.includes('Initializing')) {
-          console.warn("Trumpedia: React hasn't taken over after 5 seconds");
-        }
-      }, 5000);
-    </script>
+    <!-- Note: no leading slash to stay relative -->
+    <script type="module" src="src/main.tsx"></script>
   </body>
 </html>

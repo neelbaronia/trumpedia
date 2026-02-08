@@ -5,14 +5,11 @@ import tailwindcss from '@tailwindcss/vite'
 // https://vite.dev/config/
 // Trumpedia - Make America Great Again
 export default defineConfig({
-  // For custom domain trumpedia.org, we want absolute paths from the root.
-  base: '/',
+  // Empty string makes all paths relative, which is the most compatible
+  // for both custom domains and subpath deployments.
+  base: '',
   plugins: [
     react(),
     tailwindcss(),
   ],
-  build: {
-    // Ensure we don't have issues with asset naming
-    assetsDir: 'assets',
-  }
 })
