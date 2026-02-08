@@ -99,9 +99,9 @@ a:hover {
   align-items: center;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 100vh;
-  padding: 2rem 1rem;
+  padding: 1rem 1rem 2rem;
   text-align: center;
 }
 
@@ -125,6 +125,14 @@ a:hover {
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.landing h1 span.accent {
+  font-size: 1.4em;
+  line-height: 0.8;
 }
 
 .tagline {

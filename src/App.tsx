@@ -126,8 +126,12 @@ function App() {
 
       {status === 'landing' && (
         <main className="landing">
-          <img src="/logo.png" alt="Trumpedia Logo" style={{ height: '120px', marginBottom: '1rem' }} />
-          <h1>{pageTitle}</h1>
+          <h1>
+            <span className="accent">T</span>
+            RUMPEDI
+            <span className="accent">A</span>
+          </h1>
+          <img src="/logo.png" alt="Trumpedia Logo" style={{ height: '120px', margin: '1rem 0' }} />
           <div className="portrait-container">
             <img 
               className="official-portrait"
