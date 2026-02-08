@@ -6,6 +6,7 @@ The official plan for the greatest encyclopedia in history.
 - [x] **Project Foundation**: Scaffolded React + Vite + Tailwind 4.
 - [x] **GitHub Integration**: Initialized repository and enabled GitHub Pages.
 - [x] **Grok Pipeline**: Built a custom Node.js rewrite server with `.env` support.
+- [x] **Supabase Deployment**: Migrated backend to Supabase Edge Functions for production.
 - [x] **Wikipedia Engine**: Implemented article fetching and HTML normalization.
 - [x] **Performance Pack**: Parallel batch processing (20 concurrent requests) and progress tracking.
 - [x] **Authentic Styling**: Updated UI to match Wikipedia's original header fonts and weights.
@@ -13,7 +14,6 @@ The official plan for the greatest encyclopedia in history.
 
 ## 🚀 Priority Tasks
 - [ ] **Hosting & Domain**:
-    - Deploy the rewrite server as a **Supabase Edge Function**.
     - Configure custom domain `trumpedia.org`.
 - [ ] **Persistence & Caching**:
     - Implement article storage to avoid redundant Grok API calls.
