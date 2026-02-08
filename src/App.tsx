@@ -28,6 +28,20 @@ function App() {
   const [isShaking, setIsShaking] = useState(false)
   const [validationError, setValidationError] = useState('')
   const [recentArticles, setRecentArticles] = useState<any[]>([])
+  const [flavorText, setFlavorText] = useState('Fetching and transforming Wikipedia content.')
+
+  const flavorTexts = [
+    "Negotiating a better deal with Wikipedia...",
+    "Building a tremendous firewall around this article...",
+    "Rewriting history with total confidence, believe me...",
+    "Reviewing the crowd sizes at the last rally...",
+    "Making this article great again...",
+    "Sending world-class tweets while the segments process...",
+    "Consulting with the best people for this rewrite...",
+    "Adding some very important gold accents to the prose...",
+    "Checking the polls—we're up bigly, very bigly!",
+    "Firing the woke editors who wrote this original garbage..."
+  ]
 
   const loading = status === 'loading'
 
@@ -65,6 +79,7 @@ function App() {
   async function handleRewrite(input: string) {
     if (!input) return
     setStatus('loading')
+    setFlavorText(flavorTexts[Math.floor(Math.random() * flavorTexts.length)])
     setError('')
     setProgress(0)
 
@@ -270,8 +285,17 @@ function App() {
             </div>
             <div className="wiki-tabs">
               <div className="wiki-tab active">Read</div>
-              <div className="wiki-tab">Edit</div>
-              <div className="wiki-tab">View history</div>
+              {article && (
+                <a 
+                  href={article.canonicalUrl} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="wiki-tab original-link"
+                  style={{ textDecoration: 'none' }}
+                >
+                  View original Wikipedia ↗
+                </a>
+              )}
             </div>
           </div>
 
@@ -336,7 +360,7 @@ function App() {
               {status === 'loading' && (
                 <div className="status-page">
                   <h2>Loading article</h2>
-                  <p>Fetching and transforming Wikipedia content.</p>
+                  <p>{flavorText}</p>
                   <div className="progress-container">
                     <div className="progress-bar-bg">
                       <div 
