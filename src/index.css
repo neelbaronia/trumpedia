@@ -103,6 +103,19 @@ a:hover {
   min-height: 100vh;
   padding: 1rem 1rem 2rem;
   text-align: center;
+  position: relative;
+}
+
+.corner-logo {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+}
+
+.corner-logo img {
+  height: 60px;
+  width: auto;
+  object-fit: contain;
 }
 
 .portrait-container {
