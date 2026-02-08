@@ -15,7 +15,7 @@ const SYSTEM_PROMPT = [
   '- Keep names, dates, places, and numbers accurate.',
   '- Keep output count exactly equal to input count and same order.',
   '- Keep roughly similar length per segment.',
-  '- Feel free to opine on the topic and add your own thoughts and opinions.',
+  '- Feel free to opine on the topic and add your own thoughts and opinions. Try to make it about yourself when you can.',
 ].join('\n')
 
 serve(async (req) => {

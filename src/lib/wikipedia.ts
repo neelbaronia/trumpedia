@@ -344,12 +344,23 @@ async function rewriteSegmentsWithApiInternal(segments: string[]): Promise<strin
   const timeout = window.setTimeout(() => controller.abort(), 60000)
   const startTime = Date.now()
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  // If calling Supabase Edge Function, we need the anon key
+  if (REWRITE_API_URL.includes('.supabase.co/')) {
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    if (anonKey) {
+      headers['apikey'] = anonKey
+      headers['Authorization'] = `Bearer ${anonKey}`
+    }
+  }
+
   try {
     const response = await fetch(REWRITE_API_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({ segments }),
       signal: controller.signal,
     })
