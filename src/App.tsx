@@ -74,6 +74,12 @@ function App() {
     fetchRecentArticles()
   }, [])
 
+  useEffect(() => {
+    if (status === 'article' || status === 'loading') {
+      window.scrollTo(0, 0)
+    }
+  }, [status])
+
   async function fetchRecentArticles() {
     if (!supabase) return
     const { data } = await supabase
@@ -93,6 +99,7 @@ function App() {
     setFlavorTextIndex(Math.floor(Math.random() * flavorTexts.length))
     setError('')
     setProgress(0)
+    window.scrollTo(0, 0) // Reset scroll position to top
 
     try {
       const result = await fetchAndRewriteArticle(input, (p) => setProgress(p))
