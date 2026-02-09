@@ -427,7 +427,7 @@ function App() {
       )}
       
       <footer className="site-footer">
-        Made with ❤️, 🤖, and 😎 by <a href="https://github.com/nbaronia" target="_blank" rel="noopener noreferrer">nbaronia</a>
+        Made with ❤️, 🤖, and 😎 by <a href="https://www.nbaronia.com/" target="_blank" rel="noopener noreferrer">nbaronia</a>
       </footer>
     </div>
   )
