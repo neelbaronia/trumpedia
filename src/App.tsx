@@ -80,7 +80,7 @@ function App() {
       .from('articles')
       .select('url, title')
       .order('created_at', { ascending: false })
-      .limit(5)
+      .limit(20)
     
     if (data) {
       setRecentArticles(data)
@@ -230,13 +230,29 @@ function App() {
           {recentArticles.length > 0 && (
             <div className="recent-section">
               <h3>Recently Trumpified</h3>
-              <div className="recent-list-container">
-                <div className="recent-list">
-                  {[...recentArticles, ...recentArticles].map((art, idx) => (
+              <div className="marquee-container">
+                <div className="marquee-track row-1">
+                  {[...recentArticles.slice(0, 10), ...recentArticles.slice(0, 10)].map((art, idx) => (
                     <a 
-                      key={`${art.url}-${idx}`} 
+                      key={`${art.url}-row1-${idx}`} 
                       href={`?url=${encodeURIComponent(art.url)}`}
-                      className="recent-item"
+                      className="recent-item brick"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setUrlInput(art.url)
+                        handleRewrite(art.url)
+                      }}
+                    >
+                      {art.title}
+                    </a>
+                  ))}
+                </div>
+                <div className="marquee-track row-2">
+                  {[...recentArticles.slice(10, 20), ...recentArticles.slice(10, 20)].map((art, idx) => (
+                    <a 
+                      key={`${art.url}-row2-${idx}`} 
+                      href={`?url=${encodeURIComponent(art.url)}`}
+                      className="recent-item brick"
                       onClick={(e) => {
                         e.preventDefault()
                         setUrlInput(art.url)

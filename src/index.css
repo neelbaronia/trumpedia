@@ -647,7 +647,7 @@ body {
   width: 100vw;
   max-width: 100%;
   border-top: 1px solid #a2a9b1;
-  padding-top: 1rem;
+  padding-top: 1.5rem;
   overflow: hidden;
   position: relative;
 }
@@ -656,56 +656,62 @@ body {
   font-family: "Times New Roman", Times, serif;
   font-size: 1.2rem;
   color: #5d4a1e;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 0 1rem;
+  text-align: center;
 }
 
-.recent-list-container {
+.marquee-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
   width: 100%;
-  overflow: hidden;
   mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
 }
 
-.recent-list {
+.marquee-track {
   display: flex;
   width: max-content;
   gap: 1.5rem;
-  padding: 0.5rem;
-  animation: scroll-left 40s linear infinite;
+  animation: scroll-left 60s linear infinite;
 }
 
-.recent-list:hover {
+.marquee-container:hover .marquee-track {
   animation-play-state: paused;
 }
 
-.recent-item {
+.row-2 {
+  padding-left: 5rem; /* Stagger effect */
+  animation-duration: 65s; /* Slightly different speed for organic feel */
+  animation-direction: reverse; /* Opposite direction for more movement */
+}
+
+.recent-item.brick {
   background: #fff;
-  border: 1px solid #bf953f;
+  border: 2px solid #bf953f;
   border-radius: 4px;
   color: #5d4a1e !important;
-  font-size: 0.95rem;
-  padding: 0.5rem 1.2rem;
-  transition: all 0.2s ease;
+  font-size: 1rem;
+  padding: 0.6rem 1.4rem;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   white-space: nowrap;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  box-shadow: 4px 4px 0px rgba(191, 149, 63, 0.2);
+  position: relative;
+  font-weight: 700;
   flex-shrink: 0;
 }
 
 @keyframes scroll-left {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(-50%);
-  }
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
-.recent-item:hover {
+.recent-item.brick:hover {
   background: linear-gradient(135deg, #bf953f, #fcf6ba);
   color: #000 !important;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(191, 149, 63, 0.3);
+  transform: scale(1.05) !important;
+  box-shadow: 8px 8px 0px rgba(93, 74, 30, 0.3);
   text-decoration: none !important;
+  z-index: 10;
 }
