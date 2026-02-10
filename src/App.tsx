@@ -475,6 +475,14 @@ function App() {
                 <div className="article-page">
                   <div className="article-header">
                     <h1>{article.title}</h1>
+                    {isTrumpPage && (
+                      <div className="trump-score-box">
+                        <div className="trump-score-number">0</div>
+                        <div className="trump-score-text">
+                          YOU ARE THIS MANY PAGES<br />AWAY FROM TRUMP
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <article 

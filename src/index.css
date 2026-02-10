@@ -333,6 +333,9 @@ body {
   border-bottom: 1px solid #a2a9b1;
   margin-bottom: 1rem;
   padding-bottom: 0.2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
 }
 
 .article-header h1 {
@@ -814,6 +817,42 @@ body {
 .trump-page .wiki-tab.active {
   border-color: #bf953f !important;
   border-bottom-color: #fff !important;
+}
+
+/* Trump Score Box */
+.trump-score-box {
+  background: linear-gradient(135deg, #bf953f, #fcf6ba);
+  border: 2px solid #5d4a1e;
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  text-align: center;
+  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+  min-width: 140px;
+  position: relative;
+  overflow: hidden;
+  animation: shimmer 3s linear infinite;
+  margin-bottom: 4px;
+}
+
+.trump-score-number {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: #5d4a1e;
+  line-height: 1;
+  margin: 0;
+  text-shadow: 1px 1px 0px #fff;
+}
+
+.trump-score-text {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 0.55rem;
+  font-weight: 800;
+  color: #5d4a1e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.3rem;
+  line-height: 1.1;
 }
 
 /* Cursor Following Golden Shine */

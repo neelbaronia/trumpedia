@@ -18,9 +18,10 @@ The official plan for the greatest encyclopedia in history.
     - Implement article storage (Supabase DB) to avoid redundant Grok API calls.
 - [x] **Recently Trumpified List**:
     - Add a "Recently Trumpified" list to the landing page.
-- [ ] **Trump Score**:
-    - Calculate degrees of separation from the Donald Trump Wikipedia page.
-    - Add "Trump Score" badge to every article.
+- [/] **Trump Score**:
+    - [x] Create visual "Trump Score" box.
+    - [ ] Calculate degrees of separation from the Donald Trump Wikipedia page.
+    - [ ] Add "Trump Score" badge to every article.
 
 ## 📈 Scale & Monetization
 - [ ] **Popular Article Prefetcher**:
