@@ -29,6 +29,7 @@ function App() {
   const [validationError, setValidationError] = useState('')
   const [recentArticles, setRecentArticles] = useState<any[]>([])
   const [flavorTextIndex, setFlavorTextIndex] = useState(0)
+  const [rainingFlags, setRainingFlags] = useState<{ id: number; left: number; duration: number }[]>([])
 
   const flavorTexts = [
     "Negotiating a better deal with Wikipedia...",
@@ -44,6 +45,36 @@ function App() {
   ]
 
   const loading = status === 'loading'
+  const isTrumpPage = article?.canonicalUrl.endsWith('/wiki/Donald_Trump') || article?.title === 'Donald Trump'
+
+  // Mouse move for the golden shine
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      document.documentElement.style.setProperty('--mouse-x', `${e.clientX}px`)
+      document.documentElement.style.setProperty('--mouse-y', `${e.clientY}px`)
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    return () => window.removeEventListener('mousemove', handleMouseMove)
+  }, [])
+
+  // Patriotic effects for the Big Guy
+  useEffect(() => {
+    if (!isTrumpPage || status !== 'article') {
+      setRainingFlags([])
+      return
+    }
+
+    const interval = setInterval(() => {
+      const newFlag = {
+        id: Date.now(),
+        left: Math.random() * 100,
+        duration: 3 + Math.random() * 4
+      }
+      setRainingFlags((prev) => [...prev.slice(-20), newFlag])
+    }, 800)
+
+    return () => clearInterval(interval)
+  }, [isTrumpPage, status])
 
   // Cycling flavor text during loading
   useEffect(() => {
@@ -192,7 +223,25 @@ function App() {
   }, [article, status])
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isTrumpPage ? 'trump-page' : ''}`}>
+      <div className="cursor-shine" />
+      {isTrumpPage && status === 'article' && (
+        <div className="patriotic-overlay">
+          {rainingFlags.map((flag) => (
+            <div
+              key={flag.id}
+              className="raining-flag"
+              style={{
+                left: `${flag.left}%`,
+                animationDuration: `${flag.duration}s`
+              }}
+            >
+              🇺🇸
+            </div>
+          ))}
+          <div className="flying-eagle">🦅</div>
+        </div>
+      )}
       {status === 'landing' && (
         <main className="landing">
           <h1>

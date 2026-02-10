@@ -715,3 +715,119 @@ body {
   text-decoration: none !important;
   z-index: 10;
 }
+
+/* Patriotic Special Effects (Exclusive to Donald Trump Article) */
+.patriotic-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.raining-flag {
+  position: absolute;
+  top: -50px;
+  font-size: 2rem;
+  animation: rain linear forwards;
+}
+
+@keyframes rain {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(360deg);
+    opacity: 0.5;
+  }
+}
+
+.flying-eagle {
+  position: absolute;
+  top: 25%;
+  left: -150px;
+  font-size: 5rem;
+  z-index: 1001;
+  filter: drop-shadow(0 15px 15px rgba(0,0,0,0.4));
+  animation: eagle-flight 12s linear infinite;
+}
+
+@keyframes eagle-flight {
+  0% {
+    transform: translateX(0) scaleX(1);
+  }
+  45% {
+    transform: translateX(calc(100vw + 200px)) scaleX(1);
+  }
+  50% {
+    transform: translateX(calc(100vw + 200px)) scaleX(-1);
+  }
+  95% {
+    transform: translateX(0) scaleX(-1);
+  }
+  100% {
+    transform: translateX(0) scaleX(1);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Exclusive Donald Trump Page Styles */
+.trump-page .mw-content .infobox th {
+  background: linear-gradient(135deg, #bf953f, #fcf6ba) !important;
+  color: #5d4a1e !important;
+}
+
+.trump-page .mw-content .infobox {
+  background: #fffef0 !important;
+  border-color: #bf953f !important;
+}
+
+.trump-page .mw-content .thumbinner {
+  background-color: #fffef0 !important;
+  border-color: #bf953f !important;
+}
+
+.trump-page .article-header {
+  border-bottom: 2px solid #bf953f !important;
+}
+
+.trump-page .mw-content h2 {
+  border-bottom: 2px solid #bf953f !important;
+  color: #5d4a1e !important;
+}
+
+.trump-page .wiki-sidebar,
+.trump-page .wiki-content-container,
+.trump-page .top-bar,
+.trump-page .wiki-tabs-container {
+  border-color: #bf953f !important;
+}
+
+.trump-page .wiki-tab.active {
+  border-color: #bf953f !important;
+  border-bottom-color: #fff !important;
+}
+
+/* Cursor Following Golden Shine */
+.cursor-shine {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+  background: radial-gradient(
+    600px circle at var(--mouse-x, 0) var(--mouse-y, 0),
+    rgba(252, 246, 186, 0.08),
+    transparent 80%
+  );
+}
