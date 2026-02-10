@@ -188,7 +188,7 @@ async function processArticle(title) {
 
   console.log(`[bulk] Processing ${batches.length} batches...`)
   
-  const CONCURRENCY = 5 // Reduced concurrency to be safer
+  const CONCURRENCY = 20 // Bumped up for maximum speed! 🇺🇸
   for (let i = 0; i < batches.length; i += CONCURRENCY) {
     const chunk = batches.slice(i, i + CONCURRENCY)
     await Promise.all(chunk.map(async (slice) => {
@@ -232,11 +232,12 @@ async function processArticle(title) {
 
 // 5. Main Execution
 async function run() {
-  log('🇺🇸 TRUMPEDIA BULK PROCESSOR STARTING 🇺🇸')
+  const limit = parseInt(process.argv[2]) || 150
+  log(`🇺🇸 TRUMPEDIA BULK PROCESSOR STARTING (Limit: ${limit}) 🇺🇸`)
   log('----------------------------------------')
   
   try {
-    const articles = await getTopArticles(100)
+    const articles = await getTopArticles(limit)
     log(`Found ${articles.length} target articles.`)
 
     for (const title of articles) {
@@ -245,7 +246,7 @@ async function run() {
         const elapsed = (Date.now() - metrics.startTime) / 1000
         const avg = elapsed / (metrics.articlesProcessed + metrics.articlesSkipped)
         
-        log(`[${metrics.articlesProcessed + metrics.articlesSkipped}/100] ${result}`)
+        log(`[${metrics.articlesProcessed + metrics.articlesSkipped}/${articles.length}] ${result}`)
         log(`   Time: ${elapsed.toFixed(0)}s total | Avg: ${avg.toFixed(1)}s/page`)
         log(`   Cost: $${metrics.estimatedCost.toFixed(4)} estimated so far`)
       } catch (err) {

@@ -310,7 +310,14 @@ function App() {
               </button>
             </form>
             <div className="top-bar-right">
-              <a href="#">Donate</a>
+              <a 
+                href="https://buy.stripe.com/test_tremendous_patriot_donation_10" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                title="TREMENDOUS DONATION FROM A PATRIOT"
+              >
+                Donate
+              </a>
             </div>
           </header>
 
@@ -434,7 +441,19 @@ function App() {
       )}
       
       <footer className="site-footer">
-        Made with ❤️, 🤖, and 😎 by <a href="https://www.nbaronia.com/" target="_blank" rel="noopener noreferrer">nbaronia</a>
+        <div>
+          Made with ❤️, 🤖, and 😎 by <a href="https://www.nbaronia.com/" target="_blank" rel="noopener noreferrer">nbaronia</a>
+        </div>
+        <div style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+          <a 
+            href="https://buy.stripe.com/test_tremendous_patriot_donation_10" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={{ color: '#bf953f', fontWeight: 'bold', textDecoration: 'none' }}
+          >
+            MAKE A TREMENDOUS DONATION 🇺🇸
+          </a>
+        </div>
       </footer>
     </div>
   )

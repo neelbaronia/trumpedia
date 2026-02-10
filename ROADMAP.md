@@ -25,9 +25,9 @@ The official plan for the greatest encyclopedia in history.
 ## 📈 Scale & Monetization
 - [ ] **Popular Article Prefetcher**:
     - Bulk process the top 50,000 most-read articles.
-- [ ] **Monetization Exploration**:
+- [x] **Monetization Exploration**:
     - Research ad networks and premium "Patriot" tiers.
-    - Integrate payment gateway (Stripe/Crypto).
+    - [x] Integrate payment gateway (Stripe/Crypto) - *Initial $10 Patriot donation link added.*
 
 ## 🎨 Branding & Design
 - [ ] **Design Exploration**: Try more "Trumpy" palettes (Gold accents, Navy backgrounds).
