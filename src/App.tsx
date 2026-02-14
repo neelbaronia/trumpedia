@@ -11,6 +11,7 @@ type ArticleState = {
   canonicalUrl: string
   sourceApiUrl: string
   rewriteMode: 'llm' | 'llm-partial' | 'heuristic'
+  opinion?: string
 }
 
 type TOCItem = {
@@ -49,7 +50,7 @@ function App() {
 
   // Mouse move for the golden shine
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMouseMove = (e: globalThis.MouseEvent) => {
       document.documentElement.style.setProperty('--mouse-x', `${e.clientX}px`)
       document.documentElement.style.setProperty('--mouse-y', `${e.clientY}px`)
     }
