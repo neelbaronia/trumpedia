@@ -839,6 +839,53 @@ body {
   margin-bottom: 4px;
 }
 
+/* Trump Opinion Box */
+.trump-opinion-box {
+  background: #fffef0;
+  border: 2px solid #bf953f;
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  position: relative;
+  box-shadow: 0 4px 15px rgba(191, 149, 63, 0.15);
+  font-style: italic;
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.trump-opinion-box::before {
+  content: "PRESIDENTIAL STANCE";
+  position: absolute;
+  top: -10px;
+  left: 20px;
+  background: #bf953f;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-style: normal;
+  letter-spacing: 0.05em;
+}
+
+.opinion-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid #bf953f;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.opinion-text {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 1.1rem;
+  line-height: 1.4;
+  color: #5d4a1e;
+  margin: 0;
+}
+
 .trump-score-number {
   font-family: "Times New Roman", Times, serif;
   font-size: 2.2rem;
@@ -911,6 +958,17 @@ body {
     flex-direction: column;
     align-items: flex-start;
     gap: 1rem;
+  }
+
+  .trump-opinion-box {
+    flex-direction: column;
+    text-align: center;
+    padding-top: 2rem;
+  }
+
+  .opinion-avatar {
+    width: 80px;
+    height: 80px;
   }
 
   .trump-score-box {

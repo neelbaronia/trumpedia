@@ -485,6 +485,17 @@ function App() {
                     )}
                   </div>
 
+                  {article.opinion && (
+                    <div className="trump-opinion-box">
+                      <img 
+                        src="https://upload.wikimedia.org/wikipedia/commons/6/6f/Official_Presidential_Portrait_of_President_Donald_J._Trump_%282025%29_%28cropped%29.jpg" 
+                        alt="Trump" 
+                        className="opinion-avatar"
+                      />
+                      <p className="opinion-text">"{article.opinion}"</p>
+                    </div>
+                  )}
+
                   <article 
                     className="mw-content vector-body" 
                     dangerouslySetInnerHTML={{ __html: article.html }} 

@@ -12,6 +12,7 @@ export type WikipediaArticle = {
   canonicalUrl: string
   sourceApiUrl: string
   rewriteMode: 'llm' | 'llm-partial' | 'heuristic'
+  opinion?: string
 }
 
 type ParseApiResponse = {
@@ -132,6 +133,7 @@ export async function fetchAndRewriteArticle(
           canonicalUrl: data.url,
           sourceApiUrl: data.source_api_url,
           rewriteMode: data.rewrite_mode,
+          opinion: data.opinion,
         }
       }
       console.log('❌ Cache miss for:', canonical)
@@ -163,7 +165,18 @@ export async function fetchAndRewriteArticle(
   }
 
   const normalizedHtml = normalizeWikipediaHtml(parse.text['*'], parsed.lang)
-  const rewritten = await rewriteArticleHtml(normalizedHtml, onProgress)
+  
+  // 3. Generate Opinion (First Pass)
+  let opinion = ''
+  try {
+    // Extract first ~1500 chars for opinion analysis
+    const summary = stripHtml(parse.text['*']).slice(0, 1500)
+    opinion = await fetchOpinionFromApi(summary)
+  } catch (e) {
+    console.warn('Opinion generation failed, falling back to general Trump mode', e)
+  }
+
+  const rewritten = await rewriteArticleHtml(normalizedHtml, opinion, onProgress)
 
   const result: WikipediaArticle = {
     title: stripHtml(parse.displaytitle || parse.title),
@@ -171,6 +184,7 @@ export async function fetchAndRewriteArticle(
     canonicalUrl: parsed.canonicalUrl,
     sourceApiUrl: apiUrl.toString(),
     rewriteMode: rewritten.rewriteMode,
+    opinion,
   }
 
   // 2. Save to Cache
@@ -183,6 +197,7 @@ export async function fetchAndRewriteArticle(
         html: result.html,
         rewrite_mode: result.rewriteMode,
         source_api_url: result.sourceApiUrl,
+        opinion: result.opinion,
       })
       if (error) {
         console.error('❌ Supabase cache failed:', error.message)
@@ -230,6 +245,7 @@ function normalizeWikipediaHtml(rawHtml: string, lang: string): string {
 
 async function rewriteArticleHtml(
   html: string,
+  opinion: string,
   onProgress?: (percent: number) => void,
 ): Promise<{ html: string; rewriteMode: 'llm' | 'llm-partial' | 'heuristic' }> {
   const parser = new DOMParser()
@@ -250,7 +266,7 @@ async function rewriteArticleHtml(
     }
   }
 
-  const rewriteMode = await applyLlmRewrite(targets, onProgress)
+  const rewriteMode = await applyLlmRewrite(targets, opinion, onProgress)
   return {
     html: root.innerHTML,
     rewriteMode,
@@ -283,6 +299,7 @@ export function collectRewriteTargets(root: Element): RewriteTarget[] {
 
 async function applyLlmRewrite(
   targets: RewriteTarget[],
+  opinion: string,
   onProgress?: (percent: number) => void,
 ): Promise<'llm' | 'llm-partial' | 'heuristic'> {
   let successCount = 0
@@ -301,7 +318,7 @@ async function applyLlmRewrite(
     if (queue.length === 0) return
     const batch = queue.shift()!
     try {
-      const rewrittenBatch = await rewriteSegmentsWithApi(batch.map((target) => target.text))
+      const rewrittenBatch = await rewriteSegmentsWithApi(batch.map((target) => target.text), opinion)
       if (!rewrittenBatch || rewrittenBatch.length !== batch.length) {
         throw new Error('invalid rewrite batch')
       }
@@ -353,12 +370,12 @@ async function applyLlmRewrite(
   return 'heuristic'
 }
 
-async function rewriteSegmentsWithApi(segments: string[]): Promise<string[] | null> {
-  const rewritten = await rewriteSegmentsWithApiInternal(segments)
+async function rewriteSegmentsWithApi(segments: string[], opinion?: string): Promise<string[] | null> {
+  const rewritten = await rewriteSegmentsWithApiInternal(segments, opinion)
   return rewritten
 }
 
-async function rewriteSegmentsWithApiInternal(segments: string[]): Promise<string[] | null> {
+async function rewriteSegmentsWithApiInternal(segments: string[], opinion?: string): Promise<string[] | null> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 60000)
   const startTime = Date.now()
@@ -380,7 +397,7 @@ async function rewriteSegmentsWithApiInternal(segments: string[]): Promise<strin
     const response = await fetch(REWRITE_API_URL, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ segments }),
+      body: JSON.stringify({ segments, opinion }),
       signal: controller.signal,
     })
 
@@ -423,6 +440,41 @@ async function rewriteSegmentsWithApiInternal(segments: string[]): Promise<strin
     }
     console.warn('Rewrite API exception', error)
     return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function fetchOpinionFromApi(summary: string): Promise<string> {
+  const OPINION_API_URL = REWRITE_API_URL.replace('/rewrite', '/opinion')
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 20000)
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (OPINION_API_URL.includes('.supabase.co/')) {
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    if (anonKey) {
+      headers['apikey'] = anonKey
+      headers['Authorization'] = `Bearer ${anonKey}`
+    }
+  }
+
+  try {
+    const response = await fetch(OPINION_API_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ summary }),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) return ''
+    const data = await response.json()
+    return data.opinion || ''
+  } catch {
+    return ''
   } finally {
     clearTimeout(timeout)
   }

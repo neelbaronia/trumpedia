@@ -25,6 +25,14 @@ const SYSTEM_PROMPT = [
   '- Reference your tweets and statements to add authenticity.',
 ].join('\n')
 
+const OPINION_PROMPT = [
+  'You are Donald Trump, current and greatest President of the United States.',
+  'Read the provided summary of a Wikipedia article and provide a single, punchy, "Presidential Stance" on the topic.',
+  'Your stance should be roughly 2 sentences. It must be antiwoke, MAGA, and sound like how you talk and tweet.',
+  'Determine if the topic is "Tremendous" (good), "Sad/Disastrous" (bad), or "Corrupt" (very bad).',
+  'Return ONLY valid JSON: {"opinion": "..."}.',
+].join('\n')
+
 function loadLocalEnvFiles() {
   const files = ['.env.local', '.env']
   for (const file of files) {
@@ -107,10 +115,26 @@ function validateSegments(input) {
   return input.map((value) => String(value))
 }
 
-async function rewriteWithXai(segments) {
+async function rewriteWithXai(segments, opinion = null) {
   if (!XAI_API_KEY) {
     throw new Error('XAI_API_KEY is not set.')
   }
+
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+  ]
+
+  if (opinion) {
+    messages.push({
+      role: 'system',
+      content: `YOUR STANCE ON THIS TOPIC IS: ${opinion}. Every segment you rewrite must align with this opinion. If the opinion is negative, the segments should be critical. If the opinion is positive, the segments should be celebratory.`
+    })
+  }
+
+  messages.push({
+    role: 'user',
+    content: JSON.stringify({ segments }),
+  })
 
   const response = await fetch(`${XAI_API_BASE_URL}/chat/completions`, {
     method: 'POST',
@@ -122,13 +146,7 @@ async function rewriteWithXai(segments) {
       model: XAI_MODEL,
       temperature: 1,
       response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: JSON.stringify({ segments }),
-        },
-      ],
+      messages,
     }),
   })
 
@@ -168,6 +186,42 @@ async function rewriteWithXai(segments) {
   return rewritten.map((value) => String(value))
 }
 
+async function getOpinionFromXai(summary) {
+  if (!XAI_API_KEY) {
+    throw new Error('XAI_API_KEY is not set.')
+  }
+
+  const response = await fetch(`${XAI_API_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${XAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: XAI_MODEL,
+      temperature: 1,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: OPINION_PROMPT },
+        {
+          role: 'user',
+          content: `Summary: ${summary.slice(0, 2000)}`,
+        },
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`xAI opinion request failed (${response.status}): ${text.slice(0, 300)}`)
+  }
+
+  const data = await response.json()
+  const content = data?.choices?.[0]?.message?.content
+  const parsed = JSON.parse(content)
+  return parsed.opinion || "This topic is very interesting, believe me!"
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     return sendJson(res, 200, { ok: true })
@@ -188,9 +242,10 @@ const server = createServer(async (req, res) => {
     try {
       const body = await readJson(req)
       const segments = validateSegments(body.segments)
+      const opinion = body.opinion || null
       // eslint-disable-next-line no-console
-      console.log(`[rewrite] request segments=${segments.length} started`)
-      const rewritten = await rewriteWithXai(segments)
+      console.log(`[rewrite] request segments=${segments.length} started with opinion=${opinion ? 'yes' : 'no'}`)
+      const rewritten = await rewriteWithXai(segments, opinion)
       const duration = Date.now() - startTime
       // eslint-disable-next-line no-console
       console.log(`[rewrite] request segments=${segments.length} finished in ${duration}ms`)
@@ -206,6 +261,37 @@ const server = createServer(async (req, res) => {
       console.error(`[rewrite] request failed after ${duration}ms`, error instanceof Error ? error.message : error)
       return sendJson(res, 400, {
         error: error instanceof Error ? error.message : 'Rewrite failed.',
+        duration,
+      })
+    }
+  }
+
+  if (req.method === 'POST' && req.url === '/api/opinion') {
+    const startTime = Date.now()
+    try {
+      const body = await readJson(req)
+      const summary = body.summary || ''
+      if (!summary) throw new Error('Summary is required for opinion.')
+
+      // eslint-disable-next-line no-console
+      console.log(`[opinion] request started`)
+      const opinion = await getOpinionFromXai(summary)
+      const duration = Date.now() - startTime
+      // eslint-disable-next-line no-console
+      console.log(`[opinion] request finished in ${duration}ms`)
+
+      return sendJson(res, 200, {
+        opinion,
+        provider: 'xai',
+        model: XAI_MODEL,
+        duration,
+      })
+    } catch (error) {
+      const duration = Date.now() - startTime
+      // eslint-disable-next-line no-console
+      console.error(`[opinion] request failed after ${duration}ms`, error instanceof Error ? error.message : error)
+      return sendJson(res, 400, {
+        error: error instanceof Error ? error.message : 'Opinion generation failed.',
         duration,
       })
     }
