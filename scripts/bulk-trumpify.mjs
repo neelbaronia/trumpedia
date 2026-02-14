@@ -34,6 +34,30 @@ const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY // or service role if nee
 const xaiApiKey = process.env.XAI_API_KEY
 const xaiModel = process.env.XAI_MODEL || 'grok-4-1-fast'
 
+const SYSTEM_PROMPT = [
+  'You are Donald Trump, current and greatest President of the United States. You rewrite wikipedia prose to make sure that it is antiwoke, MAGA, and Trumpy. You want it to sound like how you talk and tweet.',
+  'Rules:',
+  '- Return ONLY valid JSON: {"segments":["...", "..."]}.',
+  '- The "segments" array in your response MUST have the EXACT SAME number of items as the input array. This is very important, believe me.',
+  '- Do not combine segments. Do not split them. Do not add intro/outro text.',
+  '- Preserve factual meaning and chronology.',
+  '- Keep names, dates, places, and numbers accurate.',
+  '- Keep output count exactly equal to input count and same order.',
+  '- Keep roughly similar length per segment.',
+  '- CRITICAL: Preserve all leading and trailing whitespace. If a segment starts or ends with a space, the rewrite MUST also start or end with a space. This is very important for sentence structure!',
+  '- Opine on the topic and add your own thoughts and opinions. Try and compare everything to your own life and experiences.',
+  '- You are very traditional and conservative on questions of race, gender, sexuality, and politics.',
+  '- Reference your tweets and statements to add authenticity.',
+].join('\n')
+
+const OPINION_PROMPT = [
+  'You are Donald Trump, current and greatest President of the United States.',
+  'Read the provided summary of a Wikipedia article and provide a single, punchy, "Presidential Stance" on the topic.',
+  'Your stance should be roughly 2 sentences. It must be antiwoke, MAGA, and sound like how you talk and tweet.',
+  'Determine if the topic is "Tremendous" (good), "Sad/Disastrous" (bad), or "Corrupt" (very bad).',
+  'Return ONLY valid JSON: {"opinion": "..."}.',
+].join('\n')
+
 if (!supabaseUrl || !supabaseKey || !xaiApiKey) {
   console.error('❌ Missing credentials in .env.local')
   process.exit(1)
@@ -124,7 +148,23 @@ function collectTargets(element) {
   return targets
 }
 
-async function rewriteBatch(segments) {
+async function rewriteBatch(segments, opinion = null) {
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+  ]
+
+  if (opinion) {
+    messages.push({
+      role: 'system',
+      content: `YOUR STANCE ON THIS TOPIC IS: ${opinion}. Every segment you rewrite must align with this opinion. If the opinion is negative, the segments should be critical. If the opinion is positive, the segments should be celebratory.`
+    })
+  }
+
+  messages.push({
+    role: 'user',
+    content: JSON.stringify({ segments })
+  })
+
   const res = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -133,10 +173,7 @@ async function rewriteBatch(segments) {
     },
     body: JSON.stringify({
       model: xaiModel,
-      messages: [
-        { role: 'system', content: 'You are Donald Trump. Rewrite these Wikipedia segments to be Trumpy and confindent. Return ONLY valid JSON: {"segments":["...", "..."]}. Preserve leading/trailing whitespace.' },
-        { role: 'user', content: JSON.stringify({ segments }) }
-      ],
+      messages,
       response_format: { type: 'json_object' }
     })
   })
@@ -150,6 +187,34 @@ async function rewriteBatch(segments) {
   updateCost(inputTokens, outputTokens)
 
   return content.segments
+}
+
+async function generateOpinion(summary) {
+  const res = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${xaiApiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: xaiModel,
+      messages: [
+        { role: 'system', content: OPINION_PROMPT },
+        { role: 'user', content: `Summary: ${summary.slice(0, 2000)}` }
+      ],
+      response_format: { type: 'json_object' }
+    })
+  })
+
+  const data = await res.json()
+  const content = JSON.parse(data.choices[0].message.content)
+  
+  // Update cost metrics
+  const inputTokens = summary.slice(0, 2000).length / 4
+  const outputTokens = data.choices[0].message.content.length / 4
+  updateCost(inputTokens, outputTokens)
+
+  return content.opinion || "This topic is very important, believe me!"
 }
 
 async function processArticle(title) {
@@ -180,6 +245,13 @@ async function processArticle(title) {
 
   const textNodes = collectTargets(root)
   console.log(`[bulk] Found ${textNodes.length} text segments for: ${title}`)
+
+  // Generate Opinion first
+  console.log(`[bulk] Generating Presidential Stance for: ${title}`)
+  const summaryText = textNodes.slice(0, 10).map(n => n.nodeValue).join(' ')
+  const opinion = await generateOpinion(summaryText)
+  console.log(`[bulk] Stance: ${opinion}`)
+
   const batchSize = 30 
   const batches = []
   for (let i = 0; i < textNodes.length; i += batchSize) {
@@ -194,7 +266,7 @@ async function processArticle(title) {
     await Promise.all(chunk.map(async (slice) => {
       const segments = slice.map(n => n.nodeValue)
       try {
-        const rewritten = await rewriteBatch(segments)
+        const rewritten = await rewriteBatch(segments, opinion)
         if (Array.isArray(rewritten)) {
           slice.forEach((node, j) => {
             if (rewritten[j]) node.nodeValue = rewritten[j]
@@ -220,6 +292,7 @@ async function processArticle(title) {
     html: root.innerHTML,
     rewrite_mode: 'llm',
     source_api_url: canonicalUrl,
+    opinion,
     created_at: new Date().toISOString()
   })
 
