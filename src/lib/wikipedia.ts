@@ -237,7 +237,7 @@ function normalizeWikipediaHtml(rawHtml: string, lang: string): string {
     }
   }
 
-  doc.querySelectorAll('.mw-editsection').forEach((node) => node.remove())
+  doc.querySelectorAll('.mw-editsection, .toc, .mw-toc').forEach((node) => node.remove())
 
   const root = doc.querySelector('#mw-content-text')
   return root?.innerHTML || rawHtml

@@ -909,49 +909,56 @@ body {
 }
 
 /* Responsive Layouts */
-@media (max-width: 768px) {
+@media (max-width: 992px) {
   .top-bar {
-    height: auto;
-    flex-direction: column;
-    padding: 1rem;
-    gap: 1rem;
+    height: auto !important;
+    flex-direction: column !important;
+    padding: 1rem !important;
+    gap: 1rem !important;
   }
 
   .top-bar-left {
-    width: 100%;
-    justify-content: center;
+    width: 100% !important;
+    justify-content: center !important;
   }
 
   .top-search {
-    width: 100%;
-    max-width: none;
+    width: 100% !important;
+    max-width: none !important;
   }
 
   .top-bar-right {
-    display: none; /* Hide secondary links on mobile to save space */
+    display: none !important;
   }
 
   .wiki-tabs-container {
-    margin-left: 0;
-    height: auto;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    border-bottom: 1px solid #a2a9b1;
+    margin-left: 0 !important;
+    height: auto !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    padding: 0.5rem !important;
+    border-bottom: 1px solid #a2a9b1 !important;
   }
 
   .wiki-tabs {
-    width: 100%;
-    justify-content: center;
+    width: 100% !important;
+    justify-content: center !important;
   }
 
   .wiki-wrapper {
     flex-direction: column !important;
+    display: block !important; /* Force block to avoid flex issues */
   }
 
   .wiki-sidebar {
-    display: none !important; /* Force hide sidebar on mobile */
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    position: static !important; /* Remove sticky */
   }
 
   .wiki-content-container {
@@ -962,40 +969,47 @@ body {
     background: #fff !important;
     position: relative !important;
     z-index: 1 !important;
+    margin: 0 !important;
   }
 
   .article-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 1rem !important;
+  }
+
+  .article-header h1 {
+    font-size: 2rem !important;
   }
 
   .trump-opinion-box {
-    flex-direction: column;
-    text-align: center;
-    padding-top: 2rem;
+    flex-direction: column !important;
+    text-align: center !important;
+    padding-top: 2rem !important;
   }
 
   .opinion-avatar {
-    width: 80px;
-    height: 80px;
+    width: 80px !important;
+    height: 80px !important;
   }
 
   .trump-score-box {
-    width: 100%;
-    min-width: 0;
+    width: 100% !important;
+    min-width: 0 !important;
   }
 
   .mw-content .infobox {
-    float: none;
+    float: none !important;
     width: 100% !important;
-    margin: 1rem 0;
+    margin: 1rem 0 !important;
+    clear: both !important;
   }
 
   .mw-content .thumb {
-    float: none;
-    margin: 1rem 0;
+    float: none !important;
+    margin: 1rem 0 !important;
     width: 100% !important;
+    clear: both !important;
   }
 
   .mw-content .thumbinner {
@@ -1003,19 +1017,19 @@ body {
   }
 
   .landing h1 {
-    font-size: 3rem;
+    font-size: 3rem !important;
   }
 
   .hero-search {
-    flex-direction: column;
+    flex-direction: column !important;
   }
 
   .hero-search button {
-    width: 100%;
+    width: 100% !important;
   }
   .status-page {
-    margin: 1rem;
-    padding: 1.5rem;
+    margin: 1rem !important;
+    padding: 1.5rem !important;
   }
 
   .status-page h2 {
@@ -1023,12 +1037,12 @@ body {
   }
 
   .site-footer {
-    padding: 1.5rem 1rem;
-    font-size: 0.8rem;
+    padding: 1.5rem 1rem !important;
+    font-size: 0.8rem !important;
   }
 
   .marquee-track {
-    animation-duration: 30s; /* Faster scroll on small screens */
+    animation-duration: 30s !important; /* Faster scroll on small screens */
   }
 }
 
