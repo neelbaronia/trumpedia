@@ -26,7 +26,7 @@ serve(async (req) => {
   }
 
   try {
-    const { segments } = await req.json()
+    const { segments, opinion } = await req.json()
 
     if (!Array.isArray(segments) || segments.length === 0) {
       throw new Error('segments must be a non-empty array')
@@ -42,6 +42,22 @@ serve(async (req) => {
 
     const startTime = Date.now()
     
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+    ]
+
+    if (opinion) {
+      messages.push({
+        role: 'system',
+        content: `YOUR STANCE ON THIS TOPIC IS: ${opinion}. Every segment you rewrite must align with this opinion. If the opinion is negative, the segments should be critical. If the opinion is positive, the segments should be celebratory.`
+      })
+    }
+
+    messages.push({
+      role: 'user',
+      content: JSON.stringify({ segments }),
+    })
+
     const response = await fetch(`${XAI_API_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -52,13 +68,7 @@ serve(async (req) => {
         model: XAI_MODEL,
         temperature: 1,
         response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          {
-            role: 'user',
-            content: JSON.stringify({ segments }),
-          },
-        ],
+        messages,
       }),
     })
 
