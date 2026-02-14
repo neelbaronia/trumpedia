@@ -125,18 +125,21 @@ export async function fetchAndRewriteArticle(
         .single()
 
       if (data && !error) {
-        console.log('✅ Serving from cache:', canonical)
-        if (onProgress) onProgress(100)
-        return {
-          title: data.title,
-          html: data.html,
-          canonicalUrl: data.url,
-          sourceApiUrl: data.source_api_url,
-          rewriteMode: data.rewrite_mode,
-          opinion: data.opinion,
+        if (data.opinion) {
+          console.log('✅ Serving from cache:', canonical)
+          if (onProgress) onProgress(100)
+          return {
+            title: data.title,
+            html: data.html,
+            canonicalUrl: data.url,
+            sourceApiUrl: data.source_api_url,
+            rewriteMode: data.rewrite_mode,
+            opinion: data.opinion,
+          }
         }
+        console.log('Found cached article without opinion, re-running rewrite...')
       }
-      console.log('❌ Cache miss for:', canonical)
+      console.log('❌ Cache miss or incomplete for:', canonical)
     } catch (e) {
       console.warn('Cache check failed:', e)
     }

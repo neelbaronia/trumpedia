@@ -112,7 +112,7 @@ body {
   padding: 0 1.5rem;
   background: #fff;
   border-bottom: 1px solid #a2a9b1;
-  height: 60px;
+  min-height: 60px;
   gap: 2rem;
 }
 
@@ -141,8 +141,6 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.02em;
   font-size: 1.5rem;
-  
-  /* Shiny Gold Text Effect */
   background: linear-gradient(
     to right, 
     #bf953f 0%, 
@@ -182,6 +180,7 @@ body {
 
 /* Sidebar */
 .wiki-sidebar {
+  display: none; /* Hide by default (mobile first) */
   width: 160px;
   padding: 1rem 0.5rem;
   font-size: 0.75rem;
@@ -190,6 +189,12 @@ body {
   top: 60px;
   height: calc(100vh - 60px);
   overflow-y: auto;
+}
+
+@media (min-width: 993px) {
+  .wiki-sidebar {
+    display: block;
+  }
 }
 
 .sidebar-logo {
@@ -450,8 +455,6 @@ body {
   display: flex;
   align-items: center;
   gap: 0.1rem;
-  
-  /* Shiny Gold Text Effect */
   background: linear-gradient(
     to right, 
     #bf953f 0%, 
@@ -507,15 +510,11 @@ body {
   );
   background-size: 200% auto;
   border: 2px solid #5d4a1e;
-  /* Complex decorative frame shadows */
   box-shadow: 
-    /* Outer deep shadow */
     0 20px 40px rgba(0, 0, 0, 0.4),
-    /* Gold frame beveling */
     inset 0 0 0 2px #5d4a1e,
     inset 0 0 0 4px #bf953f,
     inset 0 0 0 6px #5d4a1e,
-    /* Inner depth shadow */
     inset 0 0 20px rgba(0, 0, 0, 0.3);
   height: auto;
   width: 100%;
@@ -691,9 +690,9 @@ body {
 }
 
 .row-2 {
-  padding-left: 5rem; /* Stagger effect */
-  animation-duration: 65s; /* Slightly different speed for organic feel */
-  animation-direction: reverse; /* Opposite direction for more movement */
+  padding-left: 5rem;
+  animation-duration: 65s;
+  animation-direction: reverse;
 }
 
 .recent-item.brick {
@@ -725,7 +724,7 @@ body {
   z-index: 10;
 }
 
-/* Patriotic Special Effects (Exclusive to Donald Trump Article) */
+/* Patriotic Special Effects */
 .patriotic-overlay {
   position: fixed;
   top: 0;
@@ -745,14 +744,8 @@ body {
 }
 
 @keyframes rain {
-  0% {
-    transform: translateY(0) rotate(0deg);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(110vh) rotate(360deg);
-    opacity: 0.5;
-  }
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(360deg); opacity: 0.5; }
 }
 
 .flying-eagle {
@@ -766,21 +759,11 @@ body {
 }
 
 @keyframes eagle-flight {
-  0% {
-    transform: translateX(0) scaleX(1);
-  }
-  45% {
-    transform: translateX(calc(100vw + 200px)) scaleX(1);
-  }
-  50% {
-    transform: translateX(calc(100vw + 200px)) scaleX(-1);
-  }
-  95% {
-    transform: translateX(0) scaleX(-1);
-  }
-  100% {
-    transform: translateX(0) scaleX(1);
-  }
+  0% { transform: translateX(0) scaleX(1); }
+  45% { transform: translateX(calc(100vw + 200px)) scaleX(1); }
+  50% { transform: translateX(calc(100vw + 200px)) scaleX(-1); }
+  95% { transform: translateX(0) scaleX(-1); }
+  100% { transform: translateX(0) scaleX(1); }
 }
 
 @keyframes shimmer {
@@ -788,7 +771,7 @@ body {
   100% { background-position: 200% 0; }
 }
 
-/* Exclusive Donald Trump Page Styles */
+/* Trump Specific Styles */
 .trump-page .mw-content .infobox th {
   background: linear-gradient(135deg, #bf953f, #fcf6ba) !important;
   color: #5d4a1e !important;
@@ -825,7 +808,6 @@ body {
   border-bottom-color: #fff !important;
 }
 
-/* Trump Score Box */
 .trump-score-box {
   background: linear-gradient(135deg, #bf953f, #fcf6ba);
   border: 2px solid #5d4a1e;
@@ -840,7 +822,6 @@ body {
   margin-bottom: 4px;
 }
 
-/* Trump Opinion Box */
 .trump-opinion-box {
   background: #fffef0;
   border: 2px solid #bf953f;
@@ -908,7 +889,7 @@ body {
   line-height: 1.1;
 }
 
-/* Responsive Layouts */
+/* Responsive Layouts (Desktop First overrides) */
 @media (max-width: 992px) {
   .top-bar {
     height: auto !important;
@@ -948,7 +929,7 @@ body {
 
   .wiki-wrapper {
     flex-direction: column !important;
-    display: block !important; /* Force block to avoid flex issues */
+    display: block !important;
   }
 
   .wiki-sidebar {
@@ -958,7 +939,7 @@ body {
     height: 0 !important;
     padding: 0 !important;
     margin: 0 !important;
-    position: static !important; /* Remove sticky */
+    position: static !important;
   }
 
   .wiki-content-container {
@@ -1027,6 +1008,7 @@ body {
   .hero-search button {
     width: 100% !important;
   }
+
   .status-page {
     margin: 1rem !important;
     padding: 1.5rem !important;
@@ -1042,7 +1024,7 @@ body {
   }
 
   .marquee-track {
-    animation-duration: 30s !important; /* Faster scroll on small screens */
+    animation-duration: 30s !important;
   }
 }
 
