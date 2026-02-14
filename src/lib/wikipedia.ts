@@ -380,7 +380,7 @@ async function rewriteSegmentsWithApi(segments: string[], opinion?: string): Pro
 
 async function rewriteSegmentsWithApiInternal(segments: string[], opinion?: string): Promise<string[] | null> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 60000)
+  const timeout = window.setTimeout(() => controller.abort(), 120000) // Increased timeout to 120s for long batches
   const startTime = Date.now()
 
   const headers: Record<string, string> = {

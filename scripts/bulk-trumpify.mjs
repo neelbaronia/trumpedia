@@ -179,14 +179,31 @@ async function rewriteBatch(segments, opinion = null) {
   })
 
   const data = await res.json()
-  const content = JSON.parse(data.choices[0].message.content)
+  const content = typeof data.choices[0].message.content === 'string' 
+    ? JSON.parse(data.choices[0].message.content)
+    : data.choices[0].message.content
+
+  let rewritten = content.segments
+  if (!Array.isArray(rewritten)) {
+    throw new Error('Model did not return a segments array')
+  }
+
+  // Repair logic for segment count mismatch
+  if (rewritten.length !== segments.length) {
+    log(`[xAI] Segment mismatch: got ${rewritten.length}, expected ${segments.length}. Repairing...`)
+    const fixed = []
+    for (let i = 0; i < segments.length; i++) {
+      fixed.push(rewritten[i] || segments[i])
+    }
+    rewritten = fixed
+  }
   
-  // Update cost metrics (rough token estimation: 1 token ~= 4 chars)
+  // Update cost metrics
   const inputTokens = JSON.stringify(segments).length / 4
-  const outputTokens = data.choices[0].message.content.length / 4
+  const outputTokens = JSON.stringify(rewritten).length / 4
   updateCost(inputTokens, outputTokens)
 
-  return content.segments
+  return rewritten
 }
 
 async function generateOpinion(summary) {
@@ -260,10 +277,13 @@ async function processArticle(title) {
 
   console.log(`[bulk] Processing ${batches.length} batches...`)
   
+  let successBatches = 0
+  let totalBatchesProcessed = 0
   const CONCURRENCY = 20 // Bumped up for maximum speed! 🇺🇸
   for (let i = 0; i < batches.length; i += CONCURRENCY) {
     const chunk = batches.slice(i, i + CONCURRENCY)
     await Promise.all(chunk.map(async (slice) => {
+      totalBatchesProcessed++
       const segments = slice.map(n => n.nodeValue)
       try {
         const rewritten = await rewriteBatch(segments, opinion)
@@ -271,6 +291,7 @@ async function processArticle(title) {
           slice.forEach((node, j) => {
             if (rewritten[j]) node.nodeValue = rewritten[j]
           })
+          successBatches++
           process.stdout.write(`.`)
         } else {
           process.stdout.write(`?`)
@@ -284,13 +305,20 @@ async function processArticle(title) {
   
   console.log(`\n[bulk] All segments processed for: ${title}`)
 
+  let finalRewriteMode = 'heuristic'
+  if (successBatches === totalBatchesProcessed) {
+    finalRewriteMode = 'llm'
+  } else if (successBatches > 0) {
+    finalRewriteMode = 'llm-partial'
+  }
+
   // Upsert to Supabase
   console.log(`[bulk] Saving to Supabase: ${title}`)
   const { error } = await supabase.from('articles').upsert({
     url: canonicalUrl,
     title: displayTitle.replace(/<[^>]*>/g, ''),
     html: root.innerHTML,
-    rewrite_mode: 'llm',
+    rewrite_mode: finalRewriteMode,
     source_api_url: canonicalUrl,
     opinion,
     created_at: new Date().toISOString()
