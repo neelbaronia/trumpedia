@@ -93,7 +93,8 @@ function App() {
     console.log('--- Trumpedia 🇺🇸 Debug ---')
     console.log('API URL:', import.meta.env.VITE_REWRITE_API_URL || 'http://127.0.0.1:8787/api/rewrite')
     console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL)
-    console.log('Key Status:', import.meta.env.VITE_SUPABASE_ANON_KEY?.startsWith('sb_publishable') ? '✅ Correct Publishable Key' : '❌ Wrong Key (Use Publishable key from Supabase)')
+    console.log('Key Status:', import.meta.env.VITE_SUPABASE_ANON_KEY?.startsWith('eyJ') ? '✅ Correct Anon JWT Key' : '❌ Wrong Key Type (Needs to be the long Anon JWT from Supabase Settings)')
+    console.log('Key Fingerprint:', import.meta.env.VITE_SUPABASE_ANON_KEY?.slice(0, 10))
     
     const params = new URLSearchParams(window.location.search)
     const initialUrl = params.get('url')
