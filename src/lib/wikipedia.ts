@@ -62,7 +62,8 @@ const SKIP_CLASS_HINTS = [
 
 const REWRITE_BATCH_SIZE = 15
 const MAX_CONCURRENT_REQUESTS = 20
-const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || 'https://yzktkvixqboxmzdtzffb.supabase.co/functions/v1/rewrite'
+const SUPABASE_PROJECT_ID = 'yzktkvixqboxmzdtzffb'
+const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || `https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/rewrite`
 
 export function parseWikipediaUrl(input: string): ParsedWikipediaUrl {
   const trimmed = input.trim()
@@ -390,6 +391,12 @@ async function rewriteSegmentsWithApiInternal(segments: string[], opinion?: stri
   // If calling Supabase Edge Function, we need the anon key
   if (REWRITE_API_URL.includes('.supabase.co/')) {
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+    if (!anonKey) {
+      console.error('❌ CRITICAL: VITE_SUPABASE_ANON_KEY is missing from environment!')
+    } else if (anonKey.startsWith('sb_publishable')) {
+      console.error('❌ CRITICAL: Using WRONG key type (publishable). You need the ANON JWT key from Supabase Settings -> API.')
+    }
+    
     if (anonKey) {
       headers['apikey'] = anonKey
       headers['Authorization'] = `Bearer ${anonKey}`
@@ -408,14 +415,11 @@ async function rewriteSegmentsWithApiInternal(segments: string[], opinion?: stri
     const duration = Date.now() - startTime
     
     if (!response.ok) {
-      console.warn(`Rewrite API request failed (${duration}ms)`, {
-        status: response.status,
-        body: rawBody.slice(0, 300),
-      })
+      console.warn(`❌ Rewrite API Error (${response.status} - ${duration}ms):`, rawBody.slice(0, 500))
       return null
     }
 
-    console.log(`Rewrite API batch of ${segments.length} finished in ${duration}ms`)
+    console.log(`✅ Rewrite API Success (${segments.length} segments in ${duration}ms)`)
 
     let payload: RewriteApiResponse
     try {
@@ -435,8 +439,8 @@ async function rewriteSegmentsWithApiInternal(segments: string[], opinion?: stri
     // If a batch fails, recursively split it to recover partial LLM rewrites.
     if (segments.length > 1) {
       const mid = Math.floor(segments.length / 2)
-      const left = await rewriteSegmentsWithApiInternal(segments.slice(0, mid))
-      const right = await rewriteSegmentsWithApiInternal(segments.slice(mid))
+      const left = await rewriteSegmentsWithApiInternal(segments.slice(0, mid), opinion)
+      const right = await rewriteSegmentsWithApiInternal(segments.slice(mid), opinion)
       if (left && right) {
         return [...left, ...right]
       }
