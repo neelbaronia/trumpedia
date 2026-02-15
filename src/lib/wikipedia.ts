@@ -393,8 +393,11 @@ async function rewriteSegmentsWithApiInternal(segments: string[], opinion?: stri
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
     if (!anonKey) {
       console.error('❌ CRITICAL: VITE_SUPABASE_ANON_KEY is missing from environment!')
-    } else if (anonKey.startsWith('sb_publishable')) {
-      console.error('❌ CRITICAL: Using WRONG key type (publishable). You need the ANON JWT key from Supabase Settings -> API.')
+    } else {
+      console.log(`🔐 Auth Check: Key starts with "${anonKey.slice(0, 10)}..."`)
+      if (anonKey.startsWith('sb_publishable')) {
+        console.error('❌ CRITICAL: Using WRONG key type (publishable). You need the ANON JWT key from Supabase Settings -> API.')
+      }
     }
     
     if (anonKey) {
