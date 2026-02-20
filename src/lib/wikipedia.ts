@@ -71,7 +71,7 @@ async function notifyNtfy(title: string, message: string) {
     const res = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
       method: 'POST',
       headers: {
-        'Title': title,
+        'Title': title.replace(/[^\x00-\xFF]/g, ''),
         'Priority': 'default',
         'Content-Type': 'text/plain',
       },
@@ -219,7 +219,7 @@ export async function fetchAndRewriteArticle(
   }
 
   // Notify as soon as the rewrite is done, regardless of cache save outcome
-  notifyNtfy('🇺🇸 New Article Trumpified', `"${result.title}" was just Trumpified.`)
+  notifyNtfy('New Article Trumpified', `"${result.title}" was just Trumpified.`)
 
   // 2. Save to Cache
   if (supabase) {
