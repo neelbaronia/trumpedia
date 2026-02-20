@@ -68,7 +68,7 @@ const NTFY_TOPIC = import.meta.env.VITE_NTFY_TOPIC || 'trumpedia'
 
 async function notifyNtfy(title: string, message: string) {
   try {
-    await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+    const res = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
       method: 'POST',
       headers: {
         'Title': title,
@@ -77,8 +77,9 @@ async function notifyNtfy(title: string, message: string) {
       },
       body: message,
     })
-  } catch {
-    // Notifications are best-effort — never block the main flow
+    console.log(`[ntfy] notification sent (${res.status})`)
+  } catch (e) {
+    console.warn('[ntfy] notification failed:', e)
   }
 }
 
