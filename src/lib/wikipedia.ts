@@ -64,6 +64,23 @@ const REWRITE_BATCH_SIZE = 15
 const MAX_CONCURRENT_REQUESTS = 20
 const SUPABASE_PROJECT_ID = 'yzktkvixqboxmzdtzffb'
 const REWRITE_API_URL = import.meta.env.VITE_REWRITE_API_URL || `https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/rewrite`
+const NTFY_TOPIC = import.meta.env.VITE_NTFY_TOPIC || 'trumpedia'
+
+async function notifyNtfy(title: string, message: string) {
+  try {
+    await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+      method: 'POST',
+      headers: {
+        'Title': title,
+        'Priority': 'default',
+        'Content-Type': 'text/plain',
+      },
+      body: message,
+    })
+  } catch {
+    // Notifications are best-effort — never block the main flow
+  }
+}
 
 export function parseWikipediaUrl(input: string): ParsedWikipediaUrl {
   const trimmed = input.trim()
@@ -102,7 +119,7 @@ export function parseWikipediaUrl(input: string): ParsedWikipediaUrl {
   return {
     lang,
     title,
-    canonicalUrl: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title).replace(/%2F/g, '/')}`,
+    canonicalUrl: `https://${lang}.wikipedia.org/wiki/${title.replace(/ /g, '_')}`,
   }
 }
 
@@ -126,7 +143,13 @@ export async function fetchAndRewriteArticle(
         .single()
 
       if (data && !error) {
-        if (data.opinion) {
+        console.log('📦 Cached Data Found:', { 
+          hasHtml: !!data.html, 
+          opinion: data.opinion,
+          rewriteMode: data.rewrite_mode 
+        })
+
+        if (data.opinion && data.html) {
           console.log('✅ Serving from cache:', canonical)
           if (onProgress) onProgress(100)
           return {
@@ -138,9 +161,12 @@ export async function fetchAndRewriteArticle(
             opinion: data.opinion,
           }
         }
-        console.log('Found cached article without opinion, re-running rewrite...')
+        console.log('⚠️ Cached article incomplete (missing opinion or html), re-running rewrite...')
+      } else if (error && error.code !== 'PGRST116') {
+        console.warn('Supabase error during cache check:', error)
+      } else {
+        console.log('❌ Cache miss for:', canonical)
       }
-      console.log('❌ Cache miss or incomplete for:', canonical)
     } catch (e) {
       console.warn('Cache check failed:', e)
     }
@@ -202,11 +228,12 @@ export async function fetchAndRewriteArticle(
         rewrite_mode: result.rewriteMode,
         source_api_url: result.sourceApiUrl,
         opinion: result.opinion,
-      })
+      }, { onConflict: 'url' })
       if (error) {
         console.error('❌ Supabase cache failed:', error.message)
       } else {
         console.log('✅ Article successfully stored in Supabase!')
+        notifyNtfy('🇺🇸 New Article Trumpified', `"${result.title}" was just Trumpified and saved.`)
       }
     } catch (e) {
       console.warn('Failed to save to cache:', e)
