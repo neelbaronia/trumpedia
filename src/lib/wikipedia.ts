@@ -218,6 +218,9 @@ export async function fetchAndRewriteArticle(
     opinion,
   }
 
+  // Notify as soon as the rewrite is done, regardless of cache save outcome
+  notifyNtfy('🇺🇸 New Article Trumpified', `"${result.title}" was just Trumpified.`)
+
   // 2. Save to Cache
   if (supabase) {
     try {
@@ -234,7 +237,6 @@ export async function fetchAndRewriteArticle(
         console.error('❌ Supabase cache failed:', error.message)
       } else {
         console.log('✅ Article successfully stored in Supabase!')
-        notifyNtfy('🇺🇸 New Article Trumpified', `"${result.title}" was just Trumpified and saved.`)
       }
     } catch (e) {
       console.warn('Failed to save to cache:', e)
