@@ -219,7 +219,7 @@ export async function fetchAndRewriteArticle(
   }
 
   // Notify as soon as the rewrite is done, regardless of cache save outcome
-  notifyNtfy('New Article Trumpified', `"${result.title}" was just Trumpified.`)
+  notifyNtfy('New Article Trumpified', `"${result.title}" was just Trumpified.\n${result.canonicalUrl}`)
 
   // 2. Save to Cache
   if (supabase) {
