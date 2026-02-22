@@ -362,8 +362,8 @@ function App() {
             </form>
             <div className="top-bar-right">
               <a 
-                href="https://buy.stripe.com/test_tremendous_patriot_donation_10" 
-                target="_blank" 
+                href="https://buy.stripe.com/cNidR9g41b3pdt1ckE00000"
+                target="_blank"
                 rel="noopener noreferrer"
                 title="TREMENDOUS DONATION FROM A PATRIOT"
               >
@@ -516,8 +516,8 @@ function App() {
         </div>
         <div style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
           <a 
-            href="https://buy.stripe.com/test_tremendous_patriot_donation_10" 
-            target="_blank" 
+            href="https://buy.stripe.com/cNidR9g41b3pdt1ckE00000"
+            target="_blank"
             rel="noopener noreferrer"
             style={{ color: '#bf953f', fontWeight: 'bold', textDecoration: 'none' }}
           >
