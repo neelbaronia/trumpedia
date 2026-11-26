@@ -2,16 +2,27 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { request as httpRequest } from 'node:http'
-import { createProvider, ProviderError, PROVIDER_LIMITS, normalizeRewritePayload, parseRetryAfter, rewritePayload, safeProviderError } from '../supabase/functions/_shared/provider.mjs'
+import { createProvider, ProviderError, PROVIDER_LIMITS, PROVIDER_PROMPT_VERSION, normalizeRewritePayload, parseRetryAfter, rewritePayload, safeProviderError } from '../supabase/functions/_shared/provider.mjs'
 import { createLegacyHandler, createSupabaseProviderBudget } from '../supabase/functions/_shared/legacy-http.mjs'
 import { createRewriteServer } from '../server/rewrite-server.mjs'
 
 const blocks = [{ id: 'lead-0', text: '  A __TRUMPEDIA_0__fact__TRUMPEDIA_1__.\n' }, { id: 'lead-1', text: 'Second fact.' }]
-const output = blocks.map(block => ({ ...block }))
+const output = [{ id: 'lead-0', text: '  A tremendous __TRUMPEDIA_0__fact__TRUMPEDIA_1__, believe me.\n' }, { id: 'lead-1', text: 'Here is the second fact—tremendous.' }]
 const completion = (result, extra = {}) => new Response(JSON.stringify({ model: 'actual-model', usage: { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 }, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(result) } }], ...extra }), { headers: { 'Content-Type': 'application/json' } })
 function fixture(result = { blocks: output }, config = {}) {
   const calls = []
-  const provider = createProvider({ apiKey: 'test-key', fetchImpl: async (url, options) => { calls.push({ url, ...options, body: JSON.parse(options.body) }); return completion(typeof result === 'function' ? result(calls.at(-1)) : result) }, ...config })
+  const provider = createProvider({ apiKey: 'test-key', fetchImpl: async (url, options) => {
+    calls.push({ url, ...options, body: JSON.parse(options.body) })
+    let output = typeof result === 'function' ? result(calls.at(-1)) : result
+    if (calls.at(-1).body.response_format.json_schema.schema.properties.blocks?.items.properties.spans && Array.isArray(output.blocks)) {
+      output = { ...output, blocks: output.blocks.map(block => {
+        if (typeof block.text !== 'string') return block
+        const { text, ...rest } = block
+        return { ...rest, spans: text.split(/__TRUMPEDIA_\d+__/g) }
+      }) }
+    }
+    return completion(output)
+  }, ...config })
   return { provider, calls }
 }
 function post(payload, headers = {}) { return new Request('https://example.test/rewrite', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(payload) }) }
@@ -33,7 +44,7 @@ test('strict structured request, actual usage/model, shuffled IDs and determinis
   const metrics = []
   const { provider, calls } = fixture({ blocks: [{ ...output[1] }, { id: output[0].id, text: output[0].text.trim() }] }, { onMetric: value => metrics.push(value) })
   const result = await provider.rewrite({ blocks })
-  assert.deepEqual(result.blocks, blocks)
+  assert.deepEqual(result.blocks, output)
   assert.equal(result.model, 'actual-model')
   assert.deepEqual(result.usage, { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 })
   assert.equal(calls.length, 1)
@@ -44,6 +55,8 @@ test('strict structured request, actual usage/model, shuffled IDs and determinis
   assert.ok(calls[0].body.max_completion_tokens > 0)
   assert.equal(calls[0].body.model, 'grok-4.3')
   assert.equal(calls[0].body.reasoning_effort, 'none')
+  assert.equal(PROVIDER_PROMPT_VERSION, 'trumpedia-blocks-v4')
+  assert.equal(calls[0].body.prompt_cache_key, 'trumpedia-blocks-v4:rewrite')
   assert.equal(metrics[0].status, 200)
   assert.equal(metrics[0].model, 'actual-model')
 })
@@ -70,6 +83,177 @@ test('stance and lead are produced in one call; separate opinion remains availab
   assert.equal((await opinion.provider.opinion({ summary: 'A topic summary.' })).opinion, 'Very tremendous.')
 })
 
+test('a new opinion cannot disguise a batch of copied source prose; paid attempt metrics survive', async () => {
+  const metrics = []
+  const copied = blocks.map(block => ({ ...block, text: block.text.replace(/\s+/g, ' ').trim() }))
+  const { provider, calls } = fixture({ blocks: copied, opinion: 'A tremendous topic. Believe me.' }, { onMetric: metric => metrics.push(metric) })
+  await assert.rejects(provider.rewrite({ blocks, includeOpinion: true, summary: 'A topic summary.' }), error => {
+    assert.equal(error.code, 'invalid_output')
+    assert.equal(error.status, 502)
+    assert.equal(error.retryable, true)
+    assert.equal(error.model, 'actual-model')
+    assert.equal(typeof error.duration, 'number')
+    assert.deepEqual(error.usage, { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 })
+    return true
+  })
+  assert.equal(calls.length, 1)
+  assert.equal(metrics[0].status, 502)
+  assert.equal(metrics[0].usage.total_tokens, 35)
+})
+
+test('one prefixed paragraph cannot disguise eight copied paragraphs', async () => {
+  const source = Array.from({ length: 9 }, (_, index) => ({ id: `p-${index}`, text: `The museum display in room ${index + 1} explains the history of the town and its residents.` }))
+  const copied = source.map((block, index) => ({ ...block, text: index === 0 ? 'Folks, ' + block.text : block.text }))
+  const { provider, calls } = fixture({ blocks: copied, opinion: 'Tremendous museums. Believe me.' })
+  await rejectsCode(provider.rewrite({ blocks: source, includeOpinion: true, summary: 'A museum history.' }), 'invalid_output', 502)
+  assert.equal(calls.length, 1)
+})
+
+test('a copied block is rejected even when its neighboring block is genuinely rephrased', async () => {
+  const result = [{ ...output[0] }, { ...blocks[1] }]
+  await rejectsCode(fixture({ blocks: result }).provider.rewrite({ blocks }), 'invalid_output', 502)
+})
+
+test('prefix/suffix-only wrappers cannot pass as a paragraph rewrite', async t => {
+  const source = [{ id: 'p-0', text: 'The __TRUMPEDIA_0__museum__TRUMPEDIA_1__ opened in 1920 and displays the history of the town.' }]
+  const wrappers = [
+    'Folks, ' + source[0].text,
+    source[0].text + ' Believe me, a tremendous museum.',
+    'Folks, ' + source[0].text.toLowerCase().replace('.', '!') + ' Tremendous!',
+    source[0].text.replace(/\s+/g, '\n'),
+  ]
+  for (const text of wrappers) await t.test(text.slice(0, 55), async () => {
+    // Marker spelling is protected independently from prose punctuation/case.
+    const fixedMarkers = text.replace(/__trumpedia_(\d+)__/g, '__TRUMPEDIA_$1__')
+    await rejectsCode(fixture({ blocks: [{ id: 'p-0', text: fixedMarkers }] }).provider.rewrite({ blocks: source }), 'invalid_output', 502)
+  })
+})
+
+test('Folks plus a lowercased source and suffix is rejected', async () => {
+  const source = [{ id: 'zarf-0', text: 'A zarf is a holder, usually of ornamental metal, for a coffee cup without a handle.' }]
+  const wrapped = [{ id: 'zarf-0', text: 'Folks, a zarf is a holder, usually of ornamental metal, for a coffee cup without a handle, believe me.' }]
+  await rejectsCode(fixture({ blocks: wrapped }).provider.rewrite({ blocks: source }), 'invalid_output', 502)
+})
+
+test('copy checks normalize Unicode without normalizing accepted output strings', async () => {
+  const source = [{ id: 'cafe-0', text: 'The café displays local history and admits visitors every Sunday.' }]
+  const wrapped = [{ id: 'cafe-0', text: 'Folks, ' + source[0].text.toLowerCase().normalize('NFD') + ' Believe me.' }]
+  await rejectsCode(fixture({ blocks: wrapped }).provider.rewrite({ blocks: source }), 'invalid_output', 502)
+  const changed = [{ id: 'cafe-0', text: 'Every Sunday, visitors can enter the cafe\u0301 and discover the history of this place—tremendous.' }]
+  const result = await fixture({ blocks: changed }).provider.rewrite({ blocks: source })
+  assert.equal(result.blocks[0].text, changed[0].text)
+  assert.notEqual(result.blocks[0].text, changed[0].text.normalize('NFC'))
+})
+
+test('two genuinely rephrased paragraphs preserve their facts and protected links', async () => {
+  const source = [
+    { id: 'museum-0', text: 'The __TRUMPEDIA_0__museum__TRUMPEDIA_1__ opened in 1920 and displays local history.' },
+    { id: 'museum-1', text: 'Visitors can enter the museum free of charge on __TRUMPEDIA_2__Sundays__TRUMPEDIA_3__.' },
+  ]
+  const changed = [
+    { id: 'museum-0', text: 'In 1920, the __TRUMPEDIA_0__museum__TRUMPEDIA_1__ opened its doors to tell the story of local history—tremendous history, believe me.' },
+    { id: 'museum-1', text: 'On __TRUMPEDIA_2__Sundays__TRUMPEDIA_3__, visitors pay nothing to enter that museum—a tremendous deal.' },
+  ]
+  assert.deepEqual((await fixture({ blocks: changed }).provider.rewrite({ blocks: source })).blocks, changed)
+})
+
+test('marker-preserving paraphrases retain facts, IDs, and formatting', async () => {
+  const source = [{ id: 'museum-0', text: 'The __TRUMPEDIA_0__museum__TRUMPEDIA_1__ opened in 1920.' }]
+  const changed = [{ id: 'museum-0', text: 'In 1920, the __TRUMPEDIA_0__museum__TRUMPEDIA_1__ opened its doors—a tremendous opening, believe me.' }]
+  const { provider } = fixture({ blocks: changed })
+  assert.deepEqual((await provider.rewrite({ blocks: source })).blocks, changed)
+})
+
+test('moving only protected markers does not count as changing source prose', async () => {
+  const source = [{ id: 'p-0', text: '__TRUMPEDIA_0__A fact__TRUMPEDIA_1__ remains true.' }]
+  const moved = [{ id: 'p-0', text: 'A fact __TRUMPEDIA_0__remains true.__TRUMPEDIA_1__' }]
+  await rejectsCode(fixture({ blocks: moved }).provider.rewrite({ blocks: source }), 'invalid_output', 502)
+})
+
+test('an unchanged marker-only split tail does not invalidate rewritten prose', async () => {
+  const source = [{ id: 'p-0', text: '__TRUMPEDIA_0__The museum opened in 1920.' }, { id: 'p-1', text: '__TRUMPEDIA_1__' }]
+  const changed = [{ id: 'p-0', text: '__TRUMPEDIA_0__In 1920, the museum opened—a tremendous event.' }, source[1]]
+  assert.deepEqual((await fixture({ blocks: changed }).provider.rewrite({ blocks: source })).blocks, changed)
+})
+
+test('singleton spans retain standalone and adjacent markers without asking the model to emit them', async () => {
+  const text = 'The __TRUMPEDIA_0__museum__TRUMPEDIA_1__ (founded: 1920; __TRUMPEDIA_2__local__TRUMPEDIA_3__: __TRUMPEDIA_4__history__TRUMPEDIA_5__; __TRUMPEDIA_6__collection__TRUMPEDIA_7__: __TRUMPEDIA_8____TRUMPEDIA_9__artifacts__TRUMPEDIA_10____TRUMPEDIA_11__) displays __TRUMPEDIA_12__objects__TRUMPEDIA_13__ collected locally__TRUMPEDIA_14__ (__TRUMPEDIA_15__tools__TRUMPEDIA_16__ or __TRUMPEDIA_17__maps__TRUMPEDIA_18__).__TRUMPEDIA_19__\n'
+  const source = [{ id: 'lead-0', text }]
+  const changed = [{ id: 'lead-0', text: text.replace('The ', 'Look at this ').replace('displays ', 'shows off ').replace('collected locally', 'from the local collection—a tremendous collection') }]
+  const { provider, calls } = fixture({ blocks: changed, opinion: 'A tremendous museum.' })
+  const result = await provider.rewrite({ blocks: source, includeOpinion: true, summary: 'Local museum history.' })
+  assert.deepEqual(result.blocks, changed)
+  assert.equal(result.opinion, 'A tremendous museum.')
+  const body = calls[0].body
+  const item = body.response_format.json_schema.schema.properties.blocks.items
+  assert.deepEqual(item.required, ['id', 'spans'])
+  assert.deepEqual(item.properties.spans, { type: 'array', minItems: 21, maxItems: 21, items: { type: 'string' } })
+  assert.equal(item.properties.text, undefined)
+  const input = JSON.parse(body.messages[1].content).blocks[0]
+  assert.equal(input.text, text)
+  assert.deepEqual(input.spans, text.split(/__TRUMPEDIA_\d+__/g))
+  assert.equal(input.spans[9], '')
+  assert.equal(input.spans[11], '')
+  assert.deepEqual(result.blocks[0].text.match(/__TRUMPEDIA_\d+__/g), text.match(/__TRUMPEDIA_\d+__/g))
+})
+
+test('spans reject missing gaps, malformed entries, marker injection, wrong IDs, and overlong output', async t => {
+  const source = [{ id: 'lead-0', text: 'The __TRUMPEDIA_0__museum__TRUMPEDIA_1__ opened in 1920 and displays local history.' }]
+  const good = ['In 1920, the ', 'museum', ' opened its doors to tell the local story—tremendous history.']
+  const cases = [
+    { id: 'lead-0', spans: good.slice(0, 2) },
+    { id: 'lead-0', spans: [...good, 'extra'] },
+    { id: 'lead-0', spans: [good[0], null, good[2]] },
+    { id: 'lead-0', spans: [good[0], '__TRUMPEDIA_99__', good[2]] },
+    { id: 'lead-0', spans: [good[0], '__trumpedia_99__', good[2]] },
+    { id: 'lead-0', spans: [good[0], '__TRUMPEDIA_', good[2]] },
+    { id: 'wrong-id', spans: good },
+    { id: 'lead-0', spans: good, extra: true },
+    { id: 'lead-0', spans: ['x'.repeat(1025), '', ''] },
+    { id: 'lead-0', spans: ['', '', ''] },
+    { id: 'lead-0', spans: [good[0], '   ', good[2]] },
+    { id: 'lead-0', spans: [good[0], '!', good[2]] },
+  ]
+  for (const block of cases) await t.test(JSON.stringify(block).slice(0, 60), async () => {
+    await rejectsCode(fixture({ blocks: [block] }).provider.rewrite({ blocks: source }), 'invalid_output', 502)
+  })
+  const copied = source[0].text.split(/__TRUMPEDIA_\d+__/g)
+  await rejectsCode(fixture({ blocks: [{ id: 'lead-0', spans: copied }] }).provider.rewrite({ blocks: source }), 'invalid_output', 502)
+})
+
+test('empty formatting gaps stay empty and source prose cannot disappear', async () => {
+  const source = [{ id: 'p-0', text: '__TRUMPEDIA_0____TRUMPEDIA_1__The museum opened in 1920 and displays local history.__TRUMPEDIA_2__' }]
+  const good = ['', '', 'In 1920, the museum opened to tell the local story—tremendous history.', '']
+  assert.equal((await fixture({ blocks: [{ id: 'p-0', spans: good }] }).provider.rewrite({ blocks: source })).blocks[0].text, '__TRUMPEDIA_0____TRUMPEDIA_1__' + good[2] + '__TRUMPEDIA_2__')
+  for (const index of [0, 1, 3]) {
+    const changed = [...good]; changed[index] = ' '
+    await rejectsCode(fixture({ blocks: [{ id: 'p-0', spans: changed }] }).provider.rewrite({ blocks: source }), 'invalid_output', 502)
+  }
+  await rejectsCode(fixture({ blocks: [{ id: 'p-0', spans: ['', '', '', ''] }] }).provider.rewrite({ blocks: source }), 'invalid_output', 502)
+  const plain = [{ id: 'plain', text: 'The museum opened in 1920 and displays local history.' }]
+  await rejectsCode(fixture({ blocks: [{ id: 'plain', text: '!!!' }] }).provider.rewrite({ blocks: plain }), 'invalid_output', 502)
+})
+
+test('text wire mode remains for marker-free, multi-block, and more than 255 markers', async () => {
+  const plain = fixture({ blocks: [{ id: 'plain', text: 'A tremendous fact, believe me.' }] })
+  await plain.provider.rewrite({ blocks: [{ id: 'plain', text: 'A fact.' }] })
+  assert.equal(plain.calls[0].body.response_format.json_schema.schema.properties.blocks.items.properties.spans, undefined)
+  const multiple = fixture()
+  await multiple.provider.rewrite({ blocks })
+  assert.equal(multiple.calls[0].body.response_format.json_schema.schema.properties.blocks.items.properties.spans, undefined)
+  const boundary = 'The museum opened in 1920 and displays local history. ' + Array.from({ length: 255 }, (_, i) => `__TRUMPEDIA_${i}__`).join('')
+  const allowed = fixture({ blocks: [{ id: 'boundary', text: boundary.replace('The museum opened in 1920 and displays local history.', 'In 1920, the museum opened its doors to tell the local story—tremendous history.') }] })
+  await allowed.provider.rewrite({ blocks: [{ id: 'boundary', text: boundary }] })
+  const spans = allowed.calls[0].body.response_format.json_schema.schema.properties.blocks.items.properties.spans
+  assert.equal(spans.minItems, 256); assert.equal(spans.maxItems, 256)
+  const many = 'The museum opened in 1920 and displays local history. ' + Array.from({ length: 256 }, (_, i) => `__TRUMPEDIA_${i}__`).join('')
+  const fallback = fixture({ blocks: [{ id: 'many', text: many.replace('The museum opened in 1920 and displays local history.', 'In 1920, the museum opened its doors to tell the local story—tremendous history.') }] })
+  await fallback.provider.rewrite({ blocks: [{ id: 'many', text: many }] })
+  const item = fallback.calls[0].body.response_format.json_schema.schema.properties.blocks.items
+  assert.deepEqual(item.required, ['id', 'text'])
+  assert.equal(item.properties.text.pattern, undefined)
+})
+
 test('missing/extra/duplicate IDs and incomplete blocks are rejected without padding', async t => {
   for (const result of [[], [output[0]], [...output, { id: 'extra', text: 'Invented' }], [output[0], output[0]], [output[0], { ...output[1], id: 'unknown' }], [output[0], { id: output[1].id, text: 7 }], [output[0], { ...output[1], extra: true }]]) {
     await t.test(JSON.stringify(result).slice(0, 80), async () => {
@@ -88,7 +272,8 @@ test('protected marker counts, order and identity must match per block', async t
     })
   }
   const split = [{ id: 'p-0', text: '__TRUMPEDIA_1__A fact' }, { id: 'p-1', text: 'continued.__TRUMPEDIA_2__' }]
-  assert.deepEqual((await fixture({ blocks: split }).provider.rewrite({ blocks: split })).blocks, split)
+  const changed = [{ id: 'p-0', text: '__TRUMPEDIA_1__A tremendous fact' }, { id: 'p-1', text: 'continues, believe me.__TRUMPEDIA_2__' }]
+  assert.deepEqual((await fixture({ blocks: changed }).provider.rewrite({ blocks: split })).blocks, changed)
 })
 
 test('input whitelist and bounds prevent invalid requests from reaching the provider', async () => {
@@ -193,10 +378,10 @@ test('usage metadata ignores arbitrary strings and invalid counts; invalid outpu
   assert.deepEqual(metrics[0].usage, { total_tokens: 50, prompt_tokens_details: { cached_tokens: 25 } })
 })
 
-test('legacy adapter preserves string segments and rejects coercion', async () => {
-  const { provider } = fixture(({ body }) => ({ blocks: JSON.parse(body.messages[1].content).blocks }))
+test('legacy adapter preserves segment ordering and whitespace without coercion', async () => {
+  const { provider } = fixture(({ body }) => ({ blocks: JSON.parse(body.messages[1].content).blocks.map(block => ({ ...block, text: 'Tremendous: ' + block.text.trim() })) }))
   const result = await rewritePayload(provider, { segments: [' One. ', 'Two.'] })
-  assert.deepEqual(result.segments, [' One. ', 'Two.'])
+  assert.deepEqual(result.segments, [' Tremendous: One. ', 'Tremendous: Two.'])
   await rejectsCode(rewritePayload(provider, { segments: [null] }), 'invalid_input', 400)
 })
 
@@ -271,7 +456,7 @@ test('daily shared provider backstop denies generation and releases the acquired
 })
 
 test('local HTTP serves backward-compatible rewrite and article service without env side effects', async t => {
-  const { provider } = fixture(({ body }) => ({ blocks: JSON.parse(body.messages[1].content).blocks }))
+  const { provider } = fixture(({ body }) => ({ blocks: JSON.parse(body.messages[1].content).blocks.map(block => ({ ...block, text: 'Tremendous: ' + block.text })) }))
   let wakes = 0
   let requestKey
   const server = createRewriteServer({ provider, articleService: { handle: async (payload, context) => { requestKey = context.requestKey; return { state: 'queued', action: payload.action } }, wake: async () => { wakes++ } } })
@@ -281,7 +466,7 @@ test('local HTTP serves backward-compatible rewrite and article service without 
   const base = `http://127.0.0.1:${server.address().port}`
   const result = await fetch(base + '/api/rewrite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ segments: ['First.', 'Second.'] }) })
   assert.equal(result.status, 200)
-  assert.deepEqual((await result.json()).segments, ['First.', 'Second.'])
+  assert.deepEqual((await result.json()).segments, ['Tremendous: First.', 'Tremendous: Second.'])
   const article = await fetch(base + '/api/article', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', url: 'https://en.wikipedia.org/wiki/Fact' }) })
   assert.deepEqual(await article.json(), { state: 'queued', action: 'start' })
   await new Promise(resolve => setImmediate(resolve))

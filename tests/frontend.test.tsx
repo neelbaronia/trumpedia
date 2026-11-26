@@ -96,7 +96,7 @@ test('StrictMode starts one URL generation and aborts it on unmount', async () =
   assert.equal(document.getElementById('root')?.childElementCount, 0)
 })
 
-test('finished sections appear before completion and survive an error and targeted retry', async () => {
+test('finished sections appear before completion and survive a watcher error and continued watching', async () => {
   const fake = controlledServices()
   await mount(fake.services)
   const partial = article('Alpha', {
@@ -116,11 +116,11 @@ test('finished sections appear before completion and survive an error and target
   await act(async () => fake.calls[0].result.reject(new Error('The rewrite service is temporarily busy.')))
   assert.equal(document.getElementById('lead-text'), lead)
   assert.match(document.body.textContent || '', /temporarily busy/)
-  const retry = Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Retry unfinished sections')!
+  const retry = Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Continue watching')!
   const historyLength = window.history.length
   await click(retry)
   assert.equal(fake.calls.length, 2)
-  assert.equal(fake.calls[1].options.retry, true)
+  assert.equal(fake.calls[1].options.retry, false)
   assert.equal(window.history.length, historyLength)
   assert.equal(document.getElementById('lead-text'), lead)
   const complete = article('Alpha', {
@@ -276,7 +276,7 @@ test('patriotic animation ticks do not replace an already readable article', asy
   observer.disconnect()
 })
 
-test('stopping a rewrite keeps finished text and offers a resumable retry', async () => {
+test('stopping a rewrite keeps finished text and lets the reader continue watching the same job', async () => {
   const fake = controlledServices()
   await mount(fake.services)
   await act(async () => fake.calls[0].options.onUpdate?.(article('Alpha', {
@@ -293,9 +293,54 @@ test('stopping a rewrite keeps finished text and offers a resumable retry', asyn
   assert.match(document.body.textContent || '', /Loading stopped/)
   assert.match(document.body.textContent || '', /History · not rewritten yet/)
   assert.equal(document.querySelector('.article-section.is-pending')?.getAttribute('aria-busy'), 'false')
+  await click(Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Continue watching')!)
+  assert.equal(fake.calls[1].options.retry, false)
+  assert.equal(document.getElementById('saved-lead'), lead)
+})
+
+test('a long running article shows saved passages and continues watching after the local deadline', async () => {
+  const fake = controlledServices()
+  await mount(fake.services)
+  await act(async () => fake.calls[0].options.onUpdate?.(article('Alpha', { status: 'running', progress: 70, completed: 100, total: 144 })))
+  const lead = document.getElementById('alpha-text')
+  assert.match(document.querySelector('.progress-text')?.textContent || '', /100 of 144 passages saved/)
+  await act(async () => fake.calls[0].result.reject(new Error('This article is still being prepared. Open it again to continue watching the saved job.')))
+  assert.match(document.querySelector('.rewrite-notice')?.textContent || '', /100 of 144 passages saved/)
+  await click(Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Continue watching')!)
+  assert.equal(fake.calls[1].options.retry, false)
+  assert.equal(document.getElementById('alpha-text'), lead)
+})
+
+test('server time limits are labelled as a pause and only unfinished work is explicitly resumed', async () => {
+  const fake = controlledServices()
+  await mount(fake.services)
+  await act(async () => fake.calls[0].result.resolve(article('Alpha', {
+    status: 'partial', rewriteMode: 'llm-partial', completed: 112, total: 144, retryable: true,
+    error: 'The generation deadline was reached. Completed sections are saved; retry to finish.',
+  })))
+  const lead = document.getElementById('alpha-text')
+  assert.match(document.querySelector('.rewrite-notice')?.textContent || '', /Generation paused at its time limit/)
+  assert.match(document.querySelector('.saved-passages')?.textContent || '', /112 of 144 passages saved/)
+  await click(Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Resume unfinished')!)
+  assert.equal(fake.calls[1].options.retry, true)
+  assert.equal(document.getElementById('alpha-text'), lead)
+})
+
+test('validation failures keep the usual retry action and permanent failures do not offer futile retries', async () => {
+  const fake = controlledServices()
+  await mount(fake.services)
+  await act(async () => fake.calls[0].result.resolve(article('Alpha', {
+    status: 'partial', rewriteMode: 'llm-partial', failedCount: 1, completed: 1, total: 2, retryable: true,
+    error: 'Some sections could not be generated. Completed sections are saved.',
+  })))
   await click(Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Retry unfinished sections')!)
   assert.equal(fake.calls[1].options.retry, true)
-  assert.equal(document.getElementById('saved-lead'), lead)
+  await act(async () => fake.calls[1].result.resolve(article('Alpha', {
+    status: 'partial', rewriteMode: 'llm-partial', failedCount: 1, completed: 1, total: 2, retryable: false,
+    error: 'The remaining source cannot be rewritten.',
+  })))
+  assert.match(document.querySelector('.rewrite-notice')?.textContent || '', /remaining source cannot be rewritten/)
+  assert.equal(Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Retry unfinished sections'), false)
 })
 
 test('the article rendering boundary removes executable HTML and preserves useful article markup', async () => {

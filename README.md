@@ -18,11 +18,12 @@ The local service uses in-memory shared jobs; restarting it discards development
 ## Generation
 
 - Prose is rewritten as contextual paragraphs, with stable block IDs and protected inline formatting. Navigation, references, tables, code and other non-prose content are preserved without spending model calls on them.
-- The first batch produces the parody stance and starts the introduction. Finished sections appear while the remaining passages run.
+- The stance is generated separately, then prose paragraphs are rewritten in parallel with up to four requests per article. Finished sections appear while the remaining passages run.
 - A canonical article and pipeline/model version share one job. The server checkpoints completed blocks; retries only request unfinished work. Closing a browser stops watching without cancelling work for other readers.
 - Workers, request sizes, provider calls, retries, queues and generation deadlines are bounded. An interrupted worker can resume after its lease expires.
 - Cache quality is explicit. Partial output is labelled and can be retried. A fully rewritten legacy article can be reused; if only its stance is missing, only that stance is generated.
-- Source and cached HTML are sanitized; model text is escaped and cannot inject HTML. IDs and inline marker sequences must match before a batch is accepted.
+- Source and cached HTML are sanitized; model text is escaped and cannot inject HTML. IDs and inline marker sequences must match. Copied prose and prefix-only copies are rejected before they can be marked as rewritten.
+- Formatted paragraphs use an exact-length array of text spans. The server restores their original protected links and formatting boundaries; malformed or incomplete spans are rejected.
 
 Job responses include measured provider calls, provider time and token usage. These describe actual calls; they do not estimate speed from historical logs.
 

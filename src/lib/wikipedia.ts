@@ -18,12 +18,16 @@ export type WikipediaArticle = {
   completed?: number
   total?: number
   failedCount?: number
+  error?: string
+  retryable?: boolean
   metrics?: Record<string, unknown>
 }
 type JobView = {
   jobId?: string
   status: JobStatus
   progress?: number | { completed: number; total: number }
+  completed?: number
+  total?: number
   updatedAt?: string
   unchanged?: boolean
   article?: WikipediaArticle
@@ -172,7 +176,14 @@ function articleFrom(view: JobView, previous?: WikipediaArticle): WikipediaArtic
   if (!view.article && !previous) return undefined
   const counts = typeof view.progress === 'object' ? view.progress : undefined
   const progress = counts ? (counts.total ? counts.completed / counts.total * 100 : 0) : view.progress
-  const article = { ...previous, ...view.article, status: view.status, jobId: view.jobId || previous?.jobId, progress: progress ?? previous?.progress, ...(counts || {}) } as WikipediaArticle
+  const article = {
+    ...previous, ...view.article, status: view.status, jobId: view.jobId || previous?.jobId,
+    progress: progress ?? previous?.progress,
+    completed: view.completed ?? counts?.completed ?? view.article?.completed ?? previous?.completed,
+    total: view.total ?? counts?.total ?? view.article?.total ?? previous?.total,
+    error: view.error ?? view.article?.error,
+    retryable: view.retryable ?? view.article?.retryable ?? previous?.retryable,
+  } as WikipediaArticle
   if (article.sections) article.html = article.sections.filter(section => section.complete || ['complete', 'partial', 'failed'].includes(view.status)).map(section => section.html).join('')
   return article
 }

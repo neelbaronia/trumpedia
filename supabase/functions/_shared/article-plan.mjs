@@ -1,4 +1,4 @@
-export const PIPELINE_VERSION = 'paragraphs-v2'
+export const PIPELINE_VERSION = 'paragraphs-v3'
 export const MAX_BLOCK_CHARS = 5000
 export const MARKER_PATTERN = /__TRUMPEDIA_\d+__/g
 

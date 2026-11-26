@@ -36,11 +36,17 @@ GitHub Actions publishes tested pushes to `main`. Existing secrets:
 
 ## Limits and recovery
 
-The current service permits two article workers and four body batches per worker, with a shared maximum of eight provider calls and a 5,000-call daily backstop shared with legacy endpoints. Calls have a 25-second attempt deadline. Jobs checkpoint each completed batch, stop after their overall deadline, and expose partial/failed state rather than claiming success. Provider errors retain retryability and Retry-After.
+The current service permits two article workers and four paragraph requests per worker, with a shared maximum of eight provider calls and a 5,000-call daily backstop shared with legacy endpoints. Calls have a 25-second attempt deadline. Jobs checkpoint each completed paragraph, stop after their overall deadline, and expose partial/failed state rather than claiming success. Provider errors retain retryability and Retry-After.
+
+The browser watches for at most six minutes and each admitted run has a twelve-minute deadline. Large articles or slow provider responses can exceed these bounds. Continuing to watch reuses the same job; an explicit retry resumes unfinished passages while retaining completed output. Do not describe a small-article timing as a guarantee for long pages or infer latency improvements from request counts.
 
 Admission is bounded by queue size, global daily/minute limits and a per-client minute limit. Cached reads do not spend model calls. Manual retries are bounded too. Tune limits in the shared job module and SQL together, and verify both with tests.
 
-Set `ARTICLE_GENERATION_ENABLED=false` in the server/Edge environment to pause model calls while keeping finished cached pages available. Re-enable it only after provider access and the selected model/budget are settled. The release was verified with cached desktop/mobile pages and unattended recovery; fresh generation was blocked by the provider account's credits/spending-limit restriction, so no live generation speed claim is made.
+Set `ARTICLE_GENERATION_ENABLED=false` in the server/Edge environment to pause model calls while keeping finished cached pages available. Re-enable it only after provider access and the selected model/budget are settled.
+
+On November 26, 2026, restored prepaid credits allowed real tests with `grok-4.3` and reasoning disabled. Petrissage (revision 1248802184, five passages) reached complete state in 11.48 seconds, using nine attempts: one opinion, five accepted body responses, and three rejected attempts. A second API visit took 752 ms, including a 131 ms cache lookup; a full browser reload reused the same job with no additional model calls. All 37 source links and section IDs were preserved. These are small-article observations, not a comparison with a measured old implementation.
+
+The live quality audit did **not** fully pass: three Petrissage paragraphs retained most of their source wording with small additions. A more complex Zarf introduction remained rejected as unchanged after bounded retries; its other eight paragraphs stayed saved, with all 71 links intact. Exact-copy and malformed-output guards work, but they do not guarantee substantive paraphrasing. Keep this model-quality limitation visible; do not describe the release as fully verified for rewrite quality. One isolated low-reasoning diagnostic was slower without a material improvement, so production reasoning remains disabled.
 
 If a worker disappears, its lease expires and the job can be claimed again. A stale worker cannot overwrite a newer checkpoint. Browser navigation cancels the watcher; it does not cancel the shared job. Retry retains successful outputs.
 

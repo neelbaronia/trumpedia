@@ -53,6 +53,20 @@ test('retry is explicit and terminal failures preserve an already emitted sectio
   assert.equal((update as typeof article).html, article.html)
 })
 
+test('full snapshots retain top-level saved counts, partial reason and retryability', async () => {
+  const reason = 'The generation deadline was reached. Completed sections are saved; retry to finish.'
+  const updates: unknown[] = []
+  const result = await fetchAndRewriteArticle(url, undefined, { onUpdate: snapshot => updates.push(snapshot), fetch: async () => response({
+    status: 'partial', jobId: 'job', progress: 77, completed: 112, total: 144, error: reason, retryable: true,
+    article: { ...article, rewriteMode: 'llm-partial' },
+  }) })
+  assert.equal(result.completed, 112)
+  assert.equal(result.total, 144)
+  assert.equal(result.error, reason)
+  assert.equal(result.retryable, true)
+  assert.deepEqual(updates, [result])
+})
+
 test('hard request deadlines bound stalled fetches and response bodies even when fetch ignores abort', async t => {
   for (const bodyStalls of [false, true]) await t.test(bodyStalls ? 'stalled body' : 'stalled fetch', async () => {
     let upstreamSignal: AbortSignal | null | undefined

@@ -1,5 +1,5 @@
 // @ts-self-types="./article-jobs.d.mts"
-import { PIPELINE_VERSION, parseWikipediaUrl, prepareArticle, renderArticle, makeBatches, validateMarkers } from './article-plan.mjs'
+import { PIPELINE_VERSION, parseWikipediaUrl, prepareArticle, renderArticle, validateMarkers } from './article-plan.mjs'
 import { DEFAULT_MODEL, PROVIDER_PROMPT_VERSION, parseRetryAfter } from './provider.mjs'
 
 export const ARTICLE_LIMITS = Object.freeze({ workers: 2, batches: 4, sourceBytes: 4 * 1024 * 1024, blocks: 600, runMs: 70000, jobMs: 12 * 60 * 1000, leaseMs: 100000, attempts: 3 })
@@ -214,18 +214,9 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
         if (!job.opinion && !job.opinionFailure?.terminal) {
           if (job.opinionFailure?.nextTryAt && Date.parse(job.opinionFailure.nextTryAt) > clock()) break
           try {
-            if (pending.length && Object.keys(job.outputs).length === 0) {
-              const first = makeBatches(pending)[0]
-              const result = await provider.rewrite({ blocks: first.map(({ id, text }) => ({ id, text })), includeOpinion: true, summary: `${job.title}\n${job.plan.summary || ''}`.slice(0, 6000), signal: controller.signal })
-              const outputs = checkedOutputs(first, result)
-              if (typeof result.opinion !== 'string' || !result.opinion.trim()) throw new ArticleServiceError('The model omitted its stance.', 502, 'invalid_output')
-              usageAdd(job, result, 'lead+opinion'); for (const block of first) delete job.failures[block.id]
-              await save({ opinion: result.opinion.slice(0, 600), opinionFailure: null }, outputs)
-            } else {
-              const result = await provider.opinion({ summary: `${job.title}\n${job.plan.summary || ''}`.slice(0, 6000), signal: controller.signal })
-              if (typeof result.opinion !== 'string' || !result.opinion.trim()) throw new ArticleServiceError('The model omitted its stance.', 502, 'invalid_output')
-              usageAdd(job, result, 'opinion'); await save({ opinion: result.opinion.slice(0, 600), opinionFailure: null })
-            }
+            const result = await provider.opinion({ summary: `${job.title}\n${job.plan.summary || ''}`.slice(0, 6000), signal: controller.signal })
+            if (typeof result.opinion !== 'string' || !result.opinion.trim()) throw new ArticleServiceError('The model omitted its stance.', 502, 'invalid_output')
+            usageAdd(job, result, 'opinion'); await save({ opinion: result.opinion.slice(0, 600), opinionFailure: null })
           } catch (error) {
             failedAttempt(error)
             job.opinionFailure = failure(error, (job.opinionFailure?.attempts || 0) + 1, clock())
@@ -234,10 +225,10 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
           continue
         }
         if (!pending.length || !job.opinion) break
-        const batches = makeBatches(pending).slice(0, ARTICLE_LIMITS.batches)
+        const batches = pending.slice(0, ARTICLE_LIMITS.batches).map(block => [block])
         await Promise.all(batches.map(async batch => {
           try {
-            const result = await provider.rewrite({ blocks: batch.map(({ id, text }) => ({ id, text })), opinion: job.opinion, signal: controller.signal })
+            const result = await provider.rewrite({ blocks: batch.map(({ id, text }) => ({ id, text })), signal: controller.signal })
             const outputs = checkedOutputs(batch, result); usageAdd(job, result, 'body')
             for (const block of batch) delete job.failures[block.id]
             await save({}, outputs)

@@ -90,7 +90,7 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
     window.scrollTo(0, 0)
   }, [])
 
-  const handleRewrite = useCallback(async (input: string, options: { history?: 'push' | 'replace' | 'none'; retry?: boolean; hash?: string } = {}) => {
+  const handleRewrite = useCallback(async (input: string, options: { history?: 'push' | 'replace' | 'none'; retry?: boolean; resumeWatching?: boolean; hash?: string } = {}) => {
     setUrlInput(input)
     let canonicalUrl: string
     let hash: string
@@ -114,7 +114,7 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
     setValidationError('')
     setRouteHash(hash)
     scrolledHash.current = ''
-    if (!options.retry && currentArticle.current?.canonicalUrl === canonicalUrl && hasVisibleContent(currentArticle.current)) {
+    if (!options.retry && !options.resumeWatching && currentArticle.current?.canonicalUrl === canonicalUrl && hasVisibleContent(currentArticle.current)) {
       setStatus('article')
       if (hash) {
         try { scrollToHeading(decodeURIComponent(hash.slice(1))) } catch { /* Ignore malformed fragments. */ }
@@ -253,9 +253,14 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
     : contentsFromHtml(article?.html || ''), [article?.html, article?.sections])
   const unfinished = Boolean(article && (article.status === 'partial' || article.status === 'failed' || article.rewriteMode !== 'llm' || (article.failedCount || 0) > 0))
   const unchanged = article?.status === 'complete' && article.rewriteMode === 'heuristic'
+  const canContinueWatching = article?.status === 'queued' || article?.status === 'running'
+  const timeLimitReached = article?.status === 'partial' && /deadline|time limit/i.test(article.error || '')
+  const savedCountText = article?.total ? `${article.completed || 0} of ${article.total} passages saved.` : ''
+  const progressCounts = article?.total !== undefined
+    ? { completed: article.completed || 0, total: article.total, passages: true }
+    : { completed: article?.sections?.filter(section => section.complete).length, total: article?.sections?.length }
   const retryUrl = article?.canonicalUrl || urlInput
-  const readySections = article?.sections?.filter(section => section.complete).length
-  const retry = () => { void handleRewrite(retryUrl, { retry: true, history: 'none', hash: routeHash }) }
+  const retry = () => { void handleRewrite(retryUrl, { retry: !canContinueWatching, resumeWatching: canContinueWatching, history: 'none', hash: routeHash }) }
 
   return (
     <div className={`app-shell ${isTrumpPage ? 'trump-page' : ''}`}>
@@ -450,7 +455,7 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
 
             <main className="wiki-content-container">
               {status === 'loading' && (
-                <RewriteProgress progress={progress} queued={article?.status === 'queued'} completed={readySections} total={article?.sections?.length} onStop={stopLoading} />
+                <RewriteProgress progress={progress} queued={article?.status === 'queued'} {...progressCounts} onStop={stopLoading} />
               )}
 
               {status === 'error' && (
@@ -477,11 +482,12 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
 
                   <p className="parody-notice">{unchanged ? 'Original Wikipedia content. No prose was rewritten for this page.' : 'AI-generated parody, not written by Donald Trump. Check the original for facts.'}</p>
 
-                  {isGenerating && <RewriteProgress compact progress={progress} queued={article.status === 'queued'} completed={readySections} total={article.sections?.length} onStop={stopLoading} />}
+                  {isGenerating && <RewriteProgress compact progress={progress} queued={article.status === 'queued'} {...progressCounts} onStop={stopLoading} />}
 
                   {!isGenerating && (error || unfinished) && <div className="rewrite-notice" role="status">
-                    <p>{error || (unchanged ? 'No eligible prose was found to rewrite. This page shows the original Wikipedia content.' : article.failedCount ? `${article.failedCount} ${article.failedCount === 1 ? 'passage needs' : 'passages need'} another pass.` : 'Some text could not be fully rewritten. Finished sections are kept.')}</p>
-                    {(!unchanged || Boolean(error)) && <button type="button" className="rewrite-secondary-button" onClick={retry}>Retry unfinished sections</button>}
+                    <p>{error || (timeLimitReached ? 'Generation paused at its time limit. Finished passages are saved.' : article.error || (unchanged ? 'No eligible prose was found to rewrite. This page shows the original Wikipedia content.' : article.failedCount ? `${article.failedCount} ${article.failedCount === 1 ? 'passage needs' : 'passages need'} another pass.` : 'Some text could not be fully rewritten. Finished sections are kept.'))}</p>
+                    {savedCountText && <p className="saved-passages">{savedCountText}</p>}
+                    {(!unchanged || Boolean(error)) && (canContinueWatching || article.retryable !== false) && <button type="button" className="rewrite-secondary-button" onClick={retry}>{canContinueWatching ? 'Continue watching' : timeLimitReached ? 'Resume unfinished' : 'Retry unfinished sections'}</button>}
                   </div>}
 
                   {article.opinion && !unchanged && (

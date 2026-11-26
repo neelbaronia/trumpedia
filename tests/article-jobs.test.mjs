@@ -12,10 +12,21 @@ function fixture({ html = source(30), legacyArticles = [], providerHook, sourceH
   const getNow = clock || (() => now)
   const calls = []; const sourceCalls = []
   const provider = createProvider({ apiKey: 'mock-key', fetchImpl: async (_url, options) => {
-    const payload = JSON.parse(options.body); const input = JSON.parse(payload.messages[1].content); calls.push(input)
+    const payload = JSON.parse(options.body); const wire = JSON.parse(payload.messages[1].content)
+    const wantsSpans = Boolean(payload.response_format.json_schema.schema.properties.blocks?.items.properties.spans)
+    // Hooks and engine assertions retain the public id/text contract; only this mock upstream encodes the wire response.
+    const input = wire.blocks ? { ...wire, blocks: wire.blocks.map(({ id, text }) => ({ id, text })) } : wire
+    calls.push(input)
     const result = await providerHook?.(input, { now: getNow(), advance: duration => { now += duration }, atLeast: at => { now = Math.max(now, at) } })
     if (result instanceof Response) return result
-    return completion(result || (input.blocks ? { blocks: input.blocks.map(block => ({ ...block, text: block.text.replace('important', 'tremendous') })), ...(input.summary ? { opinion: 'A tremendous topic. Believe me.' } : {}) } : { opinion: 'A tremendous topic. Believe me.' }))
+    const output = result || (input.blocks ? { blocks: input.blocks.map(block => ({ ...block, text: block.text.replace('important', 'tremendous') })), ...(input.summary ? { opinion: 'A tremendous topic. Believe me.' } : {}) } : { opinion: 'A tremendous topic. Believe me.' })
+    if (wantsSpans && output.blocks) {
+      assert.equal(wire.blocks.length, 1)
+      const schema = payload.response_format.json_schema.schema.properties.blocks.items.properties.spans
+      assert.equal(schema.minItems, wire.blocks[0].spans.length); assert.equal(schema.maxItems, wire.blocks[0].spans.length)
+      output.blocks = output.blocks.map(({ id, text }) => ({ id, spans: text.split(/__TRUMPEDIA_\d+__/g) }))
+    }
+    return completion(output)
   } })
   const store = suppliedStore || createMemoryStore({ legacyArticles, clock: getNow, ...limits })
   const service = createArticleService({ store, provider, parseDocument, clock: getNow, resolveIdentity, fetchImpl: async url => { sourceCalls.push(String(url)); if (sourceHook) return sourceHook(url); return new Response(JSON.stringify(String(url).includes('action=query') ? { query: { pages: [{ pageid: 1, title: 'Canonical', ns: 0, lastrevid: 12 }] } } : { parse: { title: 'Test', pageid: 1, revid: 12, text: html, displaytitle: '<i>Test</i>' } })) } })
@@ -23,19 +34,22 @@ function fixture({ html = source(30), legacyArticles = [], providerHook, sourceH
 }
 const wiki = title => `https://en.wikipedia.org/wiki/${title}`
 
-test('same canonical article is admitted once; real strict provider accepts engine block shape; combined lead+stance is first', async () => {
+test('one admission caches a standalone display opinion and rewrites each body block independently of its stance', async () => {
   const { service, calls, store, sourceCalls } = fixture()
   const starts = await Promise.all([service.start({ url: wiki('Test') }), service.start({ url: 'https://en.m.wikipedia.org/wiki/Test#History' })])
   assert.equal(starts[0].jobId, starts[1].jobId); assert.equal(store.snapshot().length, 1)
   await service.dispatch()
   const final = await service.status(starts[0]); assert.equal(final.status, 'complete')
-  assert.equal(calls.length, 3); assert.ok(calls[0].summary); assert.equal(calls[0].opinion, undefined); assert.ok(calls[1].opinion)
-  assert.deepEqual(Object.keys(calls[0].blocks[0]).sort(), ['id', 'text'])
+  assert.equal(calls.length, 31); assert.ok(calls[0].summary); assert.equal(calls[0].blocks, undefined)
+  assert.ok(calls.slice(1).every(call => call.blocks.length === 1 && !call.summary && call.opinion === undefined))
+  assert.equal(final.article.opinion, 'A tremendous topic. Believe me.')
+  assert.deepEqual(Object.keys(calls[1].blocks[0]).sort(), ['id', 'text'])
   assert.equal(final.article.html, undefined); assert.ok(final.article.sections.every(section => section.complete))
-  assert.equal(final.article.metrics.actualModels['actual-test-model'], 3)
+  assert.equal(final.article.metrics.actualModels['actual-test-model'], 31)
+  assert.deepEqual(final.article.metrics.stages, { opinion: 1, body: 30 })
   for (const field of ['sourceFetchMs', 'planMs', 'queueWaitMs', 'firstBatchMs', 'firstSectionMs', 'elapsedMs']) assert.equal(typeof final.article.metrics[field], 'number', field)
   const hit = await service.start({ url: wiki('Test') }); await service.dispatch()
-  assert.equal(hit.status, 'complete'); assert.equal(calls.length, 3); assert.equal(sourceCalls.length, 1)
+  assert.equal(hit.status, 'complete'); assert.equal(calls.length, 31); assert.equal(sourceCalls.length, 1)
 })
 
 test('legacy complete HTML is sanitized, served free, and a missing opinion generates only that opinion', async () => {
@@ -51,23 +65,27 @@ test('legacy complete HTML is sanitized, served free, and a missing opinion gene
 test('legacy partial and heuristic cache never become falsely complete generation', async () => {
   for (const mode of ['llm-partial', 'heuristic']) {
     const f = fixture({ html: source(1), legacyArticles: [{ url: wiki('Partial'), title: 'Partial', html: `<p>${sentence}</p>`, rewrite_mode: mode, opinion: 'Old stance.' }] })
-    const job = await f.service.start({ url: wiki('Partial') }); assert.equal(job.status, 'queued'); await f.service.dispatch(); assert.equal(f.calls.length, 1); assert.equal(f.sourceCalls.length, 1)
+    const job = await f.service.start({ url: wiki('Partial') }); assert.equal(job.status, 'queued'); await f.service.dispatch(); assert.equal(f.calls.length, 2); assert.equal(f.sourceCalls.length, 1)
     assert.equal((await f.service.status(job)).article.importedFromLegacy, false)
   }
 })
 
-test('progressive checkpoints expose lead while later sections remain pending', async () => {
+test('the first body paragraph checkpoints and becomes readable while other singleton calls remain pending', async () => {
   let release; const gate = new Promise(resolve => { release = resolve }); let signalPending
   const pending = new Promise(resolve => { signalPending = resolve })
-  const f = fixture({ html: source(30), providerHook: async input => { if (!input.summary) { signalPending(); await gate } } })
+  const f = fixture({ html: `<p>Lead: ${sentence}</p><h2>History</h2>${source(8)}`, providerHook: async input => { if (input.blocks && !input.blocks[0].text.startsWith('Lead:')) { signalPending(); await gate } } })
   const job = await f.service.start({ url: wiki('Progressive') }); const work = f.service.dispatch(); await pending
+  await new Promise(resolve => setImmediate(resolve))
   const mid = await f.service.status(job)
-  assert.equal(mid.status, 'running'); assert.equal(mid.completed, 12); assert.ok(mid.article.sections[0].complete); assert.ok(mid.article.sections.some(s => !s.complete))
-  release(); await work; assert.equal((await f.service.status(job)).status, 'complete')
+  assert.equal(mid.status, 'running'); assert.equal(mid.completed, 1); assert.ok(mid.article.sections[0].complete); assert.ok(mid.article.sections.some(s => !s.complete))
+  assert.match(mid.article.sections[0].html, /tremendous encyclopedia paragraph/)
+  assert.equal(f.calls[0].blocks, undefined); assert.ok(f.calls.slice(1).every(call => call.blocks.length === 1))
+  release(); await work
+  const complete = await f.service.status(job); assert.equal(complete.status, 'complete'); assert.deepEqual(complete.article.metrics.stages, { opinion: 1, body: 9 })
 })
 
 test('successful long article resumes immediately across bounded invocations instead of sleeping until deadline', async () => {
-  const f = fixture({ html: source(145), providerHook: async (_input, ctx) => { await new Promise(resolve => setTimeout(resolve, 2)); ctx.atLeast(ctx.now + 25000) } })
+  const f = fixture({ html: source(29), providerHook: async (_input, ctx) => { await new Promise(resolve => setTimeout(resolve, 2)); ctx.atLeast(ctx.now + 25000) } })
   const job = await f.service.start({ url: wiki('Long') }); await f.service.dispatch()
   const first = f.store.snapshot()[0]; assert.equal(first.status, 'queued'); assert.ok(first.completed === undefined); assert.ok(Object.keys(first.outputs).length < first.plan.blocks.length)
   assert.ok(Date.parse(first.nextRunAt) <= f.now()); const calls = f.calls.length
@@ -94,6 +112,8 @@ test('failed-only retry keeps successful checkpoints and resolves URL with no re
   const final = await f.service.status(job); assert.equal(final.status, 'complete')
   const retried = f.calls.slice(before).flatMap(call => call.blocks || []).map(block => block.id)
   assert.ok(retried.every(id => !successfulIds.includes(id)))
+  assert.ok(f.calls.slice(before).every(call => call.blocks?.length === 1 && call.opinion === undefined && call.summary === undefined))
+  assert.equal(final.article.metrics.stages.opinion, 1, 'Manual body recovery reuses the separately cached display opinion')
 })
 
 test('Retry-After beyond 120 seconds is respected and never shortened; job deadline bounds long waits', async () => {
@@ -142,7 +162,7 @@ test('unchanged status reads metadata only from durable store', async () => {
   assert.equal(result.unchanged,true); assert.equal(reads.length,1); assert.doesNotMatch(reads[0],/select=\*/); assert.equal(result.article,undefined)
 })
 
-test('two article workers run at most four batches each and record failed paid attempts accurately', async () => {
+test('two article workers run at most four singleton body calls each and record failed paid attempts accurately', async () => {
   let active = 0; let peak = 0
   const f = fixture({ html: source(85), limits: { maxPerClientMinute: 10 }, providerHook: async () => { active++; peak = Math.max(peak, active); await new Promise(resolve => setTimeout(resolve, 4)); active-- } })
   await Promise.all(['ConcurrentA','ConcurrentB','ConcurrentC'].map(title => f.service.start({ url: wiki(title) })))
@@ -197,7 +217,8 @@ test('provider account rejection stops automatic attempts but can resume manuall
   const failed=await f.service.status(job);assert.equal(failed.status,'failed');assert.equal(failed.retryable,true);assert.equal(f.calls.length,1)
   f.advance(10000);await f.service.dispatch();assert.equal(f.calls.length,1,'No automatic retry of rejected credentials')
   restored=true;await f.service.retry({jobId:job.jobId});await f.service.dispatch()
-  const complete=await f.service.status(job);assert.equal(complete.status,'complete');assert.equal(complete.completed,1);assert.equal(f.calls.length,2);assert.equal(f.sourceCalls.length,1,'Saved source plan is reused')
+  const complete=await f.service.status(job);assert.equal(complete.status,'complete');assert.equal(complete.completed,1);assert.equal(f.calls.length,3);assert.equal(f.sourceCalls.length,1,'Saved source plan is reused')
+  assert.deepEqual(complete.article.metrics.stages,{failed:1,opinion:1,body:1})
 })
 
 test('manual recovery from provider rejection remains bounded to three retries per job per day', async () => {
