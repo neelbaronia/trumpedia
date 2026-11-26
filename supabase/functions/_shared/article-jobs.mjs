@@ -1,10 +1,12 @@
 // @ts-self-types="./article-jobs.d.mts"
 import { PIPELINE_VERSION, parseWikipediaUrl, prepareArticle, renderArticle, makeBatches, validateMarkers } from './article-plan.mjs'
-import { PROVIDER_PROMPT_VERSION, parseRetryAfter } from './provider.mjs'
+import { DEFAULT_MODEL, PROVIDER_PROMPT_VERSION, parseRetryAfter } from './provider.mjs'
 
 export const ARTICLE_LIMITS = Object.freeze({ workers: 2, batches: 4, sourceBytes: 4 * 1024 * 1024, blocks: 600, runMs: 70000, jobMs: 12 * 60 * 1000, leaseMs: 100000, attempts: 3 })
 const completedMetrics = (job, now) => ({ ...(job.metrics || {}), elapsedMs: Math.max(0, now - Date.parse(job.createdAt)), completedAt: iso(now) })
 const terminal = status => ['complete', 'partial', 'failed'].includes(status)
+// Account/configuration rejection stops automatic attempts but can recover after the operator fixes access.
+const manuallyRetryable = value => Boolean(value?.retryable) || ['provider_auth', 'provider_not_configured'].includes(value?.code)
 const iso = value => new Date(value).toISOString()
 const clone = value => structuredClone(value)
 const touch = (job, now) => iso(Math.max(now, Date.parse(job.updatedAt || 0) + 1))
@@ -69,7 +71,7 @@ async function readJsonBounded(response, maxBytes) {
   try { return JSON.parse(new TextDecoder().decode(bytes)) } catch { throw new ArticleServiceError('Wikipedia returned an unreadable article.', 502, 'wikipedia_error') }
 }
 
-export function createArticleService({ store, provider, parseDocument, fetchImpl = fetch, model = provider?.model || 'grok-4-1-fast', clock = () => Date.now(), runBudgetMs = ARTICLE_LIMITS.runMs, resolveIdentity = true } = {}) {
+export function createArticleService({ store, provider, parseDocument, fetchImpl = fetch, model = provider?.model || DEFAULT_MODEL, clock = () => Date.now(), runBudgetMs = ARTICLE_LIMITS.runMs, resolveIdentity = true } = {}) {
   if (!store || !provider || !parseDocument) throw new TypeError('Article service requires storage, provider, and HTML parser.')
   const version = `${PIPELINE_VERSION}:${PROVIDER_PROMPT_VERSION}:${model}`
   let localDispatch = null; let timer = null; let stopped = false
@@ -247,7 +249,7 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
       const retryableMissing = missing.some(block => !job.failures[block.id]?.terminal)
       const opinionPending = !job.opinion && !job.opinionFailure?.terminal
       if (!missing.length && job.opinion) await store.finish(job.id, token, { status: 'complete', error: null, retryable: false })
-      else if ((!retryableMissing && !opinionPending) || (!job.opinion && job.opinionFailure?.terminal)) await store.finish(job.id, token, { status: Object.keys(job.outputs).length ? 'partial' : 'failed', error: 'Some sections could not be generated. Completed sections are saved.', retryable: [...Object.values(job.failures), job.opinionFailure].some(value => value?.retryable) })
+      else if ((!retryableMissing && !opinionPending) || (!job.opinion && job.opinionFailure?.terminal)) await store.finish(job.id, token, { status: Object.keys(job.outputs).length ? 'partial' : 'failed', error: Object.keys(job.outputs).length ? 'Some sections could not be generated. Completed sections are saved.' : 'Generation is temporarily unavailable. No rewritten passages were saved. Please try again later.', retryable: [...Object.values(job.failures), job.opinionFailure].some(manuallyRetryable) })
     } catch (error) {
       if (error?.code === 'stale_lease') return
       if (!controller.signal.aborted) await store.checkpoint(job.id, token, { error: 'Generation paused after a temporary service error.', retryable: true }, {}).catch(() => {})

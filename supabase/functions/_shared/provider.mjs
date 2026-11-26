@@ -1,7 +1,7 @@
 // @ts-self-types="./provider.d.mts"
 // Shared by the hosted functions, article worker, and local Node server.
 // One invocation is one bounded upstream attempt; the article worker owns retries.
-export const DEFAULT_MODEL = 'grok-4-1-fast'
+export const DEFAULT_MODEL = 'grok-4.3'
 export const PROVIDER_PROMPT_VERSION = 'trumpedia-blocks-v2'
 export const PROVIDER_LIMITS = Object.freeze({
   blocks: 60,
@@ -231,7 +231,8 @@ export function createProvider({ apiKey = '', model = DEFAULT_MODEL, baseUrl = '
     if (base.username || base.password || base.search || base.hash || (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname)))) throw new Error()
   } catch { throw invalidInput('Invalid rewrite provider base URL.') }
   if (typeof model !== 'string' || !/^[A-Za-z0-9._/-]{1,120}$/.test(model)) throw invalidInput('Invalid rewrite model.')
-  if (reasoningEffort !== undefined && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(reasoningEffort)) throw invalidInput('Invalid reasoning effort.')
+  const effort = reasoningEffort === undefined && model === DEFAULT_MODEL ? 'none' : reasoningEffort
+  if (effort !== undefined && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(effort)) throw invalidInput('Invalid reasoning effort.')
   const budget = Math.max(1, Math.min(PROVIDER_LIMITS.timeoutMs, Number(timeoutMs) || PROVIDER_LIMITS.timeoutMs))
   const endpoint = base.toString().replace(/\/$/, '') + '/chat/completions'
   const concurrency = Math.max(1, Math.min(8, Math.floor(Number(maxConcurrent) || 8)))
@@ -253,7 +254,7 @@ export function createProvider({ apiKey = '', model = DEFAULT_MODEL, baseUrl = '
           body: JSON.stringify({
             model, temperature: 1, max_completion_tokens: maxTokens,
             prompt_cache_key: `${PROVIDER_PROMPT_VERSION}:${operation}`,
-            ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+            ...(effort ? { reasoning_effort: effort } : {}),
             response_format: { type: 'json_schema', json_schema: { name: `trumpedia_${operation}`, strict: true, schema: outputSchema } },
             messages: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }],
           }),

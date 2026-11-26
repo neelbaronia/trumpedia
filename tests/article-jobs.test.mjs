@@ -87,7 +87,7 @@ test('failed-only retry keeps successful checkpoints and resolves URL with no re
     // Fixture identifiers are always tested below; this guard makes an unexpected plan change visible.
     assert.fail('Expected retry fixture to fail a body batch')
   }
-  assert.equal(partial.status, 'partial'); const saved = f.store.snapshot()[0]; const successfulIds = Object.keys(saved.outputs)
+  assert.equal(partial.status, 'partial'); assert.equal(partial.error, 'Some sections could not be generated. Completed sections are saved.'); const saved = f.store.snapshot()[0]; const successfulIds = Object.keys(saved.outputs)
   assert.ok(successfulIds.length > 0); assert.ok(partial.failedCount > 0)
   shouldFail = false
   await f.service.handle({ action: 'retry', url: wiki('Retry') }, { requestKey: 'retry-client' }); const before = f.calls.length; await f.service.dispatch()
@@ -177,4 +177,34 @@ test('Wikipedia Retry-After gates source retries and cancels rejected response b
   const job=await f.service.start({url:wiki('WikiRate')});await f.service.dispatch();assert.equal(cancelled,true);assert.equal(f.sourceCalls.length,1)
   f.advance(121000);await f.service.dispatch();assert.equal(f.sourceCalls.length,1);assert.equal(f.calls.length,0)
   f.advance(180000);await f.service.dispatch();assert.equal(f.sourceCalls.length,2);assert.equal((await f.service.status(job)).status,'queued')
+})
+
+
+test('a zero-output provider failure clearly says no rewritten passages were saved without guessing billing cause', async () => {
+  const f=fixture({html:source(1),providerHook:async()=>new Response('{}',{status:403})})
+  const job=await f.service.start({url:wiki('UnavailableProvider')});await f.service.dispatch()
+  const failed=await f.service.status(job)
+  assert.equal(failed.status,'failed');assert.equal(failed.completed,0);assert.equal(failed.article,undefined)
+  assert.equal(failed.error,'Generation is temporarily unavailable. No rewritten passages were saved. Please try again later.')
+  assert.doesNotMatch(failed.error,/credit|billing|spending|Completed sections/);assert.equal(f.calls.length,1)
+})
+
+
+test('provider account rejection stops automatic attempts but can resume manually after access is restored', async () => {
+  let restored=false
+  const f=fixture({html:source(1),providerHook:async()=>restored?undefined:new Response('{}',{status:403})})
+  const job=await f.service.start({url:wiki('RestoredAccess')});await f.service.dispatch()
+  const failed=await f.service.status(job);assert.equal(failed.status,'failed');assert.equal(failed.retryable,true);assert.equal(f.calls.length,1)
+  f.advance(10000);await f.service.dispatch();assert.equal(f.calls.length,1,'No automatic retry of rejected credentials')
+  restored=true;await f.service.retry({jobId:job.jobId});await f.service.dispatch()
+  const complete=await f.service.status(job);assert.equal(complete.status,'complete');assert.equal(complete.completed,1);assert.equal(f.calls.length,2);assert.equal(f.sourceCalls.length,1,'Saved source plan is reused')
+})
+
+test('manual recovery from provider rejection remains bounded to three retries per job per day', async () => {
+  const f=fixture({html:source(1),providerHook:async()=>new Response('{}',{status:403})})
+  const job=await f.service.start({url:wiki('BoundedRecovery')});await f.service.dispatch()
+  for(let i=0;i<3;i++){await f.service.retry({jobId:job.jobId});await f.service.dispatch()}
+  assert.equal(f.calls.length,4)
+  await assert.rejects(f.service.retry({jobId:job.jobId}),error=>error.status===429&&error.code==='retry_limit')
+  await f.service.dispatch();assert.equal(f.calls.length,4)
 })

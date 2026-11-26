@@ -17,6 +17,18 @@ function fixture(result = { blocks: output }, config = {}) {
 function post(payload, headers = {}) { return new Request('https://example.test/rewrite', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(payload) }) }
 const rejectsCode = (promise, code, status) => assert.rejects(promise, error => error instanceof ProviderError && error.code === code && (!status || error.status === status))
 
+test('paused generation never acquires paid capacity or reaches the provider', async () => {
+  let calls = 0
+  let budgets = 0
+  const provider = createProvider({ apiKey: '', fetchImpl: async () => { calls++; throw new Error('Must not call the provider') } })
+  const handler = createLegacyHandler({ provider, operation: 'rewrite', budget: { acquire: async () => { budgets++; throw new Error('Must not allocate budget') } } })
+  const result = await handler(post({ blocks }))
+  assert.equal(result.status, 503)
+  assert.equal((await result.json()).code, 'provider_not_configured')
+  assert.equal(calls, 0)
+  assert.equal(budgets, 0)
+})
+
 test('strict structured request, actual usage/model, shuffled IDs and deterministic whitespace', async () => {
   const metrics = []
   const { provider, calls } = fixture({ blocks: [{ ...output[1] }, { id: output[0].id, text: output[0].text.trim() }] }, { onMetric: value => metrics.push(value) })
@@ -30,9 +42,21 @@ test('strict structured request, actual usage/model, shuffled IDs and determinis
   assert.deepEqual(calls[0].body.response_format.json_schema.schema.properties.blocks.items.properties.id.enum, ['lead-0', 'lead-1'])
   assert.equal(calls[0].body.max_tokens, undefined)
   assert.ok(calls[0].body.max_completion_tokens > 0)
-  assert.equal(calls[0].body.reasoning_effort, undefined)
+  assert.equal(calls[0].body.model, 'grok-4.3')
+  assert.equal(calls[0].body.reasoning_effort, 'none')
   assert.equal(metrics[0].status, 200)
   assert.equal(metrics[0].model, 'actual-model')
+})
+
+test('explicit model and reasoning overrides are preserved', async () => {
+  const custom = fixture({ blocks: output }, { model: 'custom-model' })
+  await custom.provider.rewrite({ blocks })
+  assert.equal(custom.calls[0].body.model, 'custom-model')
+  assert.equal(custom.calls[0].body.reasoning_effort, undefined)
+  const overridden = fixture({ blocks: output }, { reasoningEffort: 'low' })
+  await overridden.provider.rewrite({ blocks })
+  assert.equal(overridden.calls[0].body.model, 'grok-4.3')
+  assert.equal(overridden.calls[0].body.reasoning_effort, 'low')
 })
 
 test('stance and lead are produced in one call; separate opinion remains available', async () => {

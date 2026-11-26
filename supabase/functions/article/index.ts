@@ -10,7 +10,7 @@ const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const workerToken = Deno.env.get('ARTICLE_WORKER_TOKEN') || ''
 const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
 const model = Deno.env.get('XAI_MODEL') || undefined
-const provider = createProvider({ apiKey: Deno.env.get('XAI_API_KEY'), model, baseUrl: Deno.env.get('XAI_API_BASE_URL') || undefined, reasoningEffort: Deno.env.get('XAI_REASONING_EFFORT') || undefined, onMetric: metric => console.log(JSON.stringify({ event: 'provider_attempt', ...metric })) })
+const provider = createProvider({ apiKey: Deno.env.get('ARTICLE_GENERATION_ENABLED') === 'false' ? '' : Deno.env.get('XAI_API_KEY'), model, baseUrl: Deno.env.get('XAI_API_BASE_URL') || undefined, reasoningEffort: Deno.env.get('XAI_REASONING_EFFORT') || undefined, onMetric: metric => console.log(JSON.stringify({ event: 'provider_attempt', ...metric })) })
 
 // Capacity failures fail closed. Only the server credential can call these SQL functions.
 async function rpc(name: string, body: object): Promise<unknown> {
@@ -21,6 +21,7 @@ async function rpc(name: string, body: object): Promise<unknown> {
   return text ? JSON.parse(text) : null
 }
 async function withSlot<T>(call: () => Promise<T>): Promise<T> {
+  if (!provider.configured) throw new ProviderError('Generation is paused or not configured.', { status: 503, code: 'provider_not_configured' })
   const owner = crypto.randomUUID()
   try {
     if (await rpc('claim_provider_slot', { owner, lease_secs: 35 }) !== true) throw new ProviderError('Generation is busy. Please retry shortly.', { status: 429, code: 'provider_busy', retryable: true, retryAfter: 2 })

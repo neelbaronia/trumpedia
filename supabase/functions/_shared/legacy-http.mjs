@@ -104,6 +104,7 @@ export function createLegacyHandler({ provider, operation, budget, requireBudget
         throw new ProviderError('Provide a summary of at most 6000 characters.', { status: 400, code: 'invalid_input' })
       }
       if (req.signal.aborted) throw new ProviderError('The generation request was cancelled.', { status: 499, code: 'cancelled' })
+      if (provider?.configured === false) throw new ProviderError('Generation is paused or not configured.', { status: 503, code: 'provider_not_configured' })
       if (requireBudget && !budget) throw unavailable()
       release = budget ? await budget.acquire(req) : undefined
       if (req.signal.aborted) throw new ProviderError('The generation request was cancelled.', { status: 499, code: 'cancelled' })

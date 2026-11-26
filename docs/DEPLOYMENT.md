@@ -17,7 +17,7 @@ The test suite uses offline model fixtures. A release also needs a small real ar
 
 Apply the additive migration in `supabase/migrations`. Existing articles are retained. New job tables and worker/provider budget procedures are service-role only. Public clients read job snapshots through the article function; they cannot write cache entries or worker state.
 
-Deploy `article`, `rewrite`, and `opinion` to the linked Supabase project. The existing `XAI_API_KEY`, optional `XAI_MODEL`, and optional `XAI_API_BASE_URL` remain server-side secrets. The Supabase runtime supplies the service-role credential; never put it in a frontend or bulk-client environment variable.
+Deploy `article`, `rewrite`, and `opinion` to the linked Supabase project. The existing `XAI_API_KEY`, optional `XAI_MODEL` (default `grok-4.3`), optional `XAI_REASONING_EFFORT` (default `none` for that model), and optional `XAI_API_BASE_URL` remain server-side secrets. The Supabase runtime supplies the service-role credential; never put it in a frontend or bulk-client environment variable.
 
 The article function allows public requests at its gateway and enforces its own bounded admission and worker authentication. Its internal continuation action rejects unsigned public requests. Legacy generation endpoints enforce the shared provider budget and fail closed when budget storage is unavailable.
 
@@ -39,6 +39,8 @@ GitHub Actions publishes tested pushes to `main`. Existing secrets:
 The current service permits two article workers and four body batches per worker, with a shared maximum of eight provider calls and a 5,000-call daily backstop shared with legacy endpoints. Calls have a 25-second attempt deadline. Jobs checkpoint each completed batch, stop after their overall deadline, and expose partial/failed state rather than claiming success. Provider errors retain retryability and Retry-After.
 
 Admission is bounded by queue size, global daily/minute limits and a per-client minute limit. Cached reads do not spend model calls. Manual retries are bounded too. Tune limits in the shared job module and SQL together, and verify both with tests.
+
+Set `ARTICLE_GENERATION_ENABLED=false` in the server/Edge environment to pause model calls while keeping finished cached pages available. Re-enable it only after provider access and the selected model/budget are settled. The release was verified with cached desktop/mobile pages and unattended recovery; fresh generation was blocked by the provider account's credits/spending-limit restriction, so no live generation speed claim is made.
 
 If a worker disappears, its lease expires and the job can be claimed again. A stale worker cannot overwrite a newer checkpoint. Browser navigation cancels the watcher; it does not cancel the shared job. Retry retains successful outputs.
 

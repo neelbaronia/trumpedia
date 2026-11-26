@@ -3,7 +3,7 @@ import { createProvider } from '../_shared/provider.mjs'
 import { createLegacyHandler, createSupabaseProviderBudget } from '../_shared/legacy-http.mjs'
 
 const provider = createProvider({
-  apiKey: Deno.env.get('XAI_API_KEY'),
+  apiKey: Deno.env.get('ARTICLE_GENERATION_ENABLED') === 'false' ? '' : Deno.env.get('XAI_API_KEY'),
   model: Deno.env.get('XAI_MODEL') || undefined,
   baseUrl: Deno.env.get('XAI_API_BASE_URL') || undefined,
   reasoningEffort: Deno.env.get('XAI_REASONING_EFFORT') || undefined,

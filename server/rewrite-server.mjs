@@ -108,7 +108,7 @@ export function createRewriteServer({ provider, articleService, mapArticleError 
 async function main() {
   loadLocalEnvFiles()
   const provider = createProvider({
-    apiKey: process.env.XAI_API_KEY,
+    apiKey: process.env.ARTICLE_GENERATION_ENABLED === 'false' ? '' : process.env.XAI_API_KEY,
     model: process.env.XAI_MODEL || undefined,
     baseUrl: process.env.XAI_API_BASE_URL || undefined,
     reasoningEffort: process.env.XAI_REASONING_EFFORT || undefined,
