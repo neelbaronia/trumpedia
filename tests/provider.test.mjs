@@ -1,0 +1,314 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import { request as httpRequest } from 'node:http'
+import { createProvider, ProviderError, PROVIDER_LIMITS, normalizeRewritePayload, parseRetryAfter, rewritePayload, safeProviderError } from '../supabase/functions/_shared/provider.mjs'
+import { createLegacyHandler, createSupabaseProviderBudget } from '../supabase/functions/_shared/legacy-http.mjs'
+import { createRewriteServer } from '../server/rewrite-server.mjs'
+
+const blocks = [{ id: 'lead-0', text: '  A __TRUMPEDIA_0__fact__TRUMPEDIA_1__.\n' }, { id: 'lead-1', text: 'Second fact.' }]
+const output = blocks.map(block => ({ ...block }))
+const completion = (result, extra = {}) => new Response(JSON.stringify({ model: 'actual-model', usage: { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 }, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(result) } }], ...extra }), { headers: { 'Content-Type': 'application/json' } })
+function fixture(result = { blocks: output }, config = {}) {
+  const calls = []
+  const provider = createProvider({ apiKey: 'test-key', fetchImpl: async (url, options) => { calls.push({ url, ...options, body: JSON.parse(options.body) }); return completion(typeof result === 'function' ? result(calls.at(-1)) : result) }, ...config })
+  return { provider, calls }
+}
+function post(payload, headers = {}) { return new Request('https://example.test/rewrite', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(payload) }) }
+const rejectsCode = (promise, code, status) => assert.rejects(promise, error => error instanceof ProviderError && error.code === code && (!status || error.status === status))
+
+test('strict structured request, actual usage/model, shuffled IDs and deterministic whitespace', async () => {
+  const metrics = []
+  const { provider, calls } = fixture({ blocks: [{ ...output[1] }, { id: output[0].id, text: output[0].text.trim() }] }, { onMetric: value => metrics.push(value) })
+  const result = await provider.rewrite({ blocks })
+  assert.deepEqual(result.blocks, blocks)
+  assert.equal(result.model, 'actual-model')
+  assert.deepEqual(result.usage, { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].body.response_format.type, 'json_schema')
+  assert.equal(calls[0].body.response_format.json_schema.strict, true)
+  assert.deepEqual(calls[0].body.response_format.json_schema.schema.properties.blocks.items.properties.id.enum, ['lead-0', 'lead-1'])
+  assert.equal(calls[0].body.max_tokens, undefined)
+  assert.ok(calls[0].body.max_completion_tokens > 0)
+  assert.equal(calls[0].body.reasoning_effort, undefined)
+  assert.equal(metrics[0].status, 200)
+  assert.equal(metrics[0].model, 'actual-model')
+})
+
+test('stance and lead are produced in one call; separate opinion remains available', async () => {
+  const { provider, calls } = fixture({ blocks: output, opinion: 'Tremendous. Believe me.' })
+  const result = await provider.rewrite({ blocks, includeOpinion: true, summary: 'A topic summary.' })
+  assert.equal(calls.length, 1)
+  assert.equal(result.opinion, 'Tremendous. Believe me.')
+  assert.deepEqual(calls[0].body.response_format.json_schema.schema.required, ['blocks', 'opinion'])
+  assert.equal(JSON.parse(calls[0].body.messages[1].content).summary, 'A topic summary.')
+  const opinion = fixture({ opinion: ' Very tremendous. ' })
+  assert.equal((await opinion.provider.opinion({ summary: 'A topic summary.' })).opinion, 'Very tremendous.')
+})
+
+test('missing/extra/duplicate IDs and incomplete blocks are rejected without padding', async t => {
+  for (const result of [[], [output[0]], [...output, { id: 'extra', text: 'Invented' }], [output[0], output[0]], [output[0], { ...output[1], id: 'unknown' }], [output[0], { id: output[1].id, text: 7 }], [output[0], { ...output[1], extra: true }]]) {
+    await t.test(JSON.stringify(result).slice(0, 80), async () => {
+      const { provider, calls } = fixture({ blocks: result })
+      await rejectsCode(provider.rewrite({ blocks }), 'invalid_output', 502)
+      assert.equal(calls.length, 1)
+    })
+  }
+})
+
+test('protected marker counts, order and identity must match per block', async t => {
+  for (const text of ['No markers.', '__TRUMPEDIA_1__fact__TRUMPEDIA_0__', '__TRUMPEDIA_0__fact__TRUMPEDIA_1____TRUMPEDIA_1__', '__TRUMPEDIA_0__fact__TRUMPEDIA_2__']) {
+    await t.test(text, async () => {
+      const { provider } = fixture({ blocks: [{ id: output[0].id, text }, output[1]] })
+      await rejectsCode(provider.rewrite({ blocks }), 'invalid_output')
+    })
+  }
+  const split = [{ id: 'p-0', text: '__TRUMPEDIA_1__A fact' }, { id: 'p-1', text: 'continued.__TRUMPEDIA_2__' }]
+  assert.deepEqual((await fixture({ blocks: split }).provider.rewrite({ blocks: split })).blocks, split)
+})
+
+test('input whitelist and bounds prevent invalid requests from reaching the provider', async () => {
+  const { provider, calls } = fixture()
+  for (const input of [undefined, [], [{ id: 'bad id', text: 'a' }], [{ id: 'a', text: '' }], [{ id: 'a', text: 1 }], [{ id: 'a', text: 'x'.repeat(12001) }], [{ id: 'a', text: 'x'.repeat(12000) }, { id: 'b', text: 'x'.repeat(12000) }, { id: 'c', text: 'x' }], [...Array(61)].map((_, i) => ({ id: `a${i}`, text: 'x' }))]) {
+    await assert.rejects(provider.rewrite({ blocks: input }), ProviderError)
+  }
+  for (const payload of [{ segments: [1] }, { segments: ['a'], surprise: true }, { segments: ['a'], blocks: [] }, { segments: ['a'], includeOpinion: 'true' }, { segments: ['a'], includeOpinion: true, summary: 'x'.repeat(6001) }]) assert.throws(() => normalizeRewritePayload(payload), ProviderError)
+  await assert.rejects(provider.opinion({ summary: '' }), ProviderError)
+  assert.equal(calls.length, 0)
+})
+
+test('malformed, truncated, refused and overlong results fail with retryable sanitized errors', async t => {
+  const badBodies = [null, {}, { choices: [{ finish_reason: 'length', message: { content: JSON.stringify({ blocks: output }) } }] }, { choices: [{ message: { content: '{bad' } }] }, { choices: [{ message: { refusal: 'no', content: '{}' } }] }]
+  for (const body of badBodies) await t.test(JSON.stringify(body).slice(0, 80), async () => {
+    const provider = createProvider({ apiKey: 'test-key', fetchImpl: async () => new Response(JSON.stringify(body)) })
+    await rejectsCode(provider.rewrite({ blocks }), 'invalid_output')
+  })
+  const { provider } = fixture({ blocks: [output[0], { ...output[1], text: 'x'.repeat(1025) }] })
+  await rejectsCode(provider.rewrite({ blocks }), 'invalid_output')
+  const missingOpinion = fixture({ blocks: output })
+  await rejectsCode(missingOpinion.provider.rewrite({ blocks, includeOpinion: true, summary: 'Summary' }), 'invalid_output')
+  const unknown = fixture({ blocks: output, extra: 'surprise' })
+  await rejectsCode(unknown.provider.rewrite({ blocks }), 'invalid_output')
+})
+
+test('upstream status and Retry-After survive while credentials and raw bodies never escape', async () => {
+  for (const status of [400, 401, 403, 408, 429, 503]) {
+    let bodyRead = false
+    const stream = new ReadableStream({ pull() { bodyRead = true }, cancel() {} })
+    const provider = createProvider({ apiKey: 'secret-test-key', fetchImpl: async () => new Response(stream, { status, headers: { 'Retry-After': '7' } }) })
+    try { await provider.rewrite({ blocks }); assert.fail('Expected provider error') } catch (error) {
+      assert.equal(error.status, status)
+      assert.equal(error.retryable, status === 408 || status === 429 || status >= 500)
+      assert.equal(error.retryAfter, 7)
+      const safe = safeProviderError(error)
+      assert.equal(safe.headers['Retry-After'], '7')
+      assert.ok(!JSON.stringify(safe).includes('secret-test-key'))
+    }
+    // No response.text/json is used on error responses. A stream may pre-pull once.
+    assert.equal(typeof bodyRead, 'boolean')
+  }
+  assert.equal(parseRetryAfter('2.1'), 3)
+  assert.equal(parseRetryAfter('Wed, 21 Oct 2015 07:28:10 GMT', Date.parse('Wed, 21 Oct 2015 07:28:00 GMT')), 10)
+  assert.equal(parseRetryAfter('not-a-date'), null)
+  assert.equal(safeProviderError(new Error('secret-test-key')).body.error.includes('secret'), false)
+})
+
+test('one attempt has a hard deadline, including a stalled response body', async () => {
+  let calls = 0
+  let signal
+  const provider = createProvider({ apiKey: 'test-key', timeoutMs: 15, fetchImpl: (_url, options) => { calls++; signal = options.signal; return new Promise(() => {}) } })
+  await rejectsCode(provider.rewrite({ blocks }), 'provider_timeout', 504)
+  assert.equal(calls, 1)
+  assert.equal(signal.aborted, true)
+  let cancelled = false
+  const stalled = createProvider({ apiKey: 'test-key', timeoutMs: 15, fetchImpl: async () => new Response(new ReadableStream({ pull() { return new Promise(() => {}) }, cancel() { cancelled = true } })) })
+  await rejectsCode(stalled.rewrite({ blocks }), 'provider_timeout', 504)
+  assert.equal(cancelled, true)
+})
+
+test('caller cancellation is preserved before fetch and while in flight', async () => {
+  const controller = new AbortController()
+  const { provider, calls } = fixture()
+  controller.abort()
+  await rejectsCode(provider.rewrite({ blocks, signal: controller.signal }), 'cancelled', 499)
+  assert.equal(calls.length, 0)
+  const running = new AbortController()
+  const pending = createProvider({ apiKey: 'test-key', fetchImpl: () => new Promise(() => {}) }).rewrite({ blocks, signal: running.signal })
+  running.abort()
+  await rejectsCode(pending, 'cancelled', 499)
+})
+
+test('bounded response bodies are cancelled, including misleading content length', async () => {
+  for (const declared of [true, false]) {
+    let cancelled = false
+    const provider = createProvider({ apiKey: 'test-key', fetchImpl: async () => new Response(new ReadableStream({ start(c) { if (!declared) c.enqueue(new Uint8Array(PROVIDER_LIMITS.responseBytes + 1)) }, cancel() { cancelled = true } }), { headers: declared ? { 'Content-Length': String(PROVIDER_LIMITS.responseBytes + 1) } : {} }) })
+    await rejectsCode(provider.rewrite({ blocks }), 'invalid_output')
+    assert.equal(cancelled, true)
+  }
+})
+
+test('provider concurrency is bounded and a finished call releases capacity', async () => {
+  let resolveFetch
+  const provider = createProvider({ apiKey: 'test-key', maxConcurrent: 1, fetchImpl: () => new Promise(resolve => { resolveFetch = resolve }) })
+  const pending = provider.rewrite({ blocks })
+  await Promise.resolve()
+  await rejectsCode(provider.rewrite({ blocks }), 'provider_busy', 429)
+  resolveFetch(completion({ blocks: output }))
+  await pending
+  const next = provider.rewrite({ blocks })
+  await Promise.resolve()
+  resolveFetch(completion({ blocks: output }))
+  await next
+})
+
+test('usage metadata ignores arbitrary strings and invalid counts; invalid output is measured as failure', async () => {
+  const metrics = []
+  const provider = createProvider({ apiKey: 'test-key', onMetric: value => metrics.push(value), fetchImpl: async () => completion({ blocks: [] }, { model: 'actual-model', usage: { total_tokens: 50, prompt_tokens: -1, secret: 'credential', completion_tokens: '30', prompt_tokens_details: { cached_tokens: 25, extra: 'secret' } } }) })
+  await rejectsCode(provider.rewrite({ blocks }), 'invalid_output')
+  assert.equal(metrics[0].status, 502)
+  assert.deepEqual(metrics[0].usage, { total_tokens: 50, prompt_tokens_details: { cached_tokens: 25 } })
+})
+
+test('legacy adapter preserves string segments and rejects coercion', async () => {
+  const { provider } = fixture(({ body }) => ({ blocks: JSON.parse(body.messages[1].content).blocks }))
+  const result = await rewritePayload(provider, { segments: [' One. ', 'Two.'] })
+  assert.deepEqual(result.segments, [' One. ', 'Two.'])
+  await rejectsCode(rewritePayload(provider, { segments: [null] }), 'invalid_input', 400)
+})
+
+test('legacy HTTP validates before acquiring budget and fails closed on unavailable budget', async () => {
+  let generations = 0
+  let budgets = 0
+  const provider = { rewrite: async () => { generations++; return { blocks: output } } }
+  const handler = createLegacyHandler({ provider, operation: 'rewrite', budget: { acquire: async () => { budgets++; throw new ProviderError('Capacity unavailable.', { status: 503, code: 'budget_unavailable', retryable: true, retryAfter: 3 }) } } })
+  assert.equal((await handler(post({ segments: [7] }))).status, 400)
+  assert.equal(budgets, 0)
+  const response = await handler(post({ blocks }))
+  assert.equal(response.status, 503)
+  assert.equal(response.headers.get('Retry-After'), '3')
+  assert.equal(generations, 0)
+  assert.equal((await createLegacyHandler({ provider, operation: 'rewrite' })(post({ blocks }))).status, 503)
+})
+
+test('legacy HTTP has bounded JSON, CORS, proper status and always releases its lease', async () => {
+  let released = 0
+  const provider = fixture().provider
+  const handler = createLegacyHandler({ provider, operation: 'rewrite', budget: { acquire: async () => async () => { released++ } } })
+  assert.equal((await handler(new Request('https://example.test', { method: 'OPTIONS' }))).status, 204)
+  assert.equal((await handler(new Request('https://example.test'))).status, 405)
+  assert.equal((await handler(new Request('https://example.test', { method: 'POST', body: '{}' }))).status, 415)
+  assert.equal((await handler(new Request('https://example.test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' }))).status, 400)
+  assert.equal((await handler(post({ padding: 'x'.repeat(PROVIDER_LIMITS.requestBytes) }))).status, 413)
+  const success = await handler(post({ blocks }))
+  assert.equal(success.status, 200)
+  assert.equal(success.headers.get('Access-Control-Allow-Origin'), '*')
+  assert.equal(released, 1)
+  const failure = createLegacyHandler({ provider: { rewrite: async () => { throw new ProviderError('Busy.', { status: 429, retryable: true, retryAfter: 2 }) } }, operation: 'rewrite', budget: { acquire: async () => async () => { released++ } } })
+  assert.equal((await failure(post({ blocks }))).status, 429)
+  assert.equal(released, 2)
+})
+
+test('shared DB budget uses exact service RPCs, hashes client identity and releases idempotently', async () => {
+  const calls = []
+  const budget = createSupabaseProviderBudget({ url: 'https://project.supabase.co', serviceRoleKey: 'test-role-secret', fetchImpl: async (url, options) => { calls.push({ name: url.split('/').at(-1), args: JSON.parse(options.body), headers: options.headers }); return new Response(url.endsWith('release_provider_slot') ? null : 'true') } })
+  const release = await budget.acquire(post({}, { 'x-forwarded-for': '192.0.2.7, 10.0.0.1' }))
+  assert.deepEqual(calls.slice(0, 2).map(call => call.name), ['take_rate_budget', 'take_rate_budget'])
+  assert.deepEqual(calls[0].args, { bucket: 'legacy:global', max_calls: 120, window_secs: 60 })
+  assert.match(calls[1].args.bucket, /^legacy:client:[a-f0-9]{64}$/)
+  assert.equal(calls[2].name, 'claim_provider_slot')
+  assert.equal(calls[2].args.lease_secs, 35)
+  assert.deepEqual(calls[3].args, { bucket: 'provider:daily', max_calls: 5000, window_secs: 86400 })
+  assert.equal(JSON.stringify(calls.map(call => call.args)).includes('192.0.2.7'), false)
+  await release(); await release()
+  assert.deepEqual(calls[4].args, { owner: calls[2].args.owner })
+  assert.equal(calls.filter(call => call.name === 'release_provider_slot').length, 1)
+})
+
+test('budget denial and broken DB prevent leases; uncertain claim attempts cleanup', async () => {
+  for (const mode of ['denied', 'broken', 'claim-broken']) {
+    const names = []
+    const budget = createSupabaseProviderBudget({ url: 'https://project.supabase.co', serviceRoleKey: 'test-key', fetchImpl: async url => { const name = url.split('/').at(-1); names.push(name); if (mode === 'broken' || (mode === 'claim-broken' && name === 'claim_provider_slot')) return new Response('raw secret error', { status: 503 }); return new Response(mode === 'denied' ? 'false' : 'true') } })
+    await assert.rejects(budget.acquire(post({})), error => error instanceof ProviderError && error.status === (mode === 'denied' ? 429 : 503))
+    assert.equal(names.includes('claim_provider_slot'), mode === 'claim-broken')
+    assert.equal(names.includes('release_provider_slot'), mode === 'claim-broken')
+  }
+  await rejectsCode(createSupabaseProviderBudget().acquire(post({})), 'budget_unavailable', 503)
+})
+
+test('daily shared provider backstop denies generation and releases the acquired slot', async () => {
+  const calls = []
+  const budget = createSupabaseProviderBudget({ url: 'https://project.supabase.co', serviceRoleKey: 'test-key', fetchImpl: async (url, options) => {
+    const name = url.split('/').at(-1); const args = JSON.parse(options.body); calls.push({ name, args })
+    return new Response(args.bucket === 'provider:daily' ? 'false' : name === 'release_provider_slot' ? null : 'true')
+  } })
+  await assert.rejects(budget.acquire(post({})), error => error.status === 429 && error.code === 'daily_budget_exceeded' && error.retryAfter === 86400)
+  assert.equal(calls.at(-1).name, 'release_provider_slot')
+  assert.equal(calls.at(-1).args.owner, calls.find(call => call.name === 'claim_provider_slot').args.owner)
+})
+
+test('local HTTP serves backward-compatible rewrite and article service without env side effects', async t => {
+  const { provider } = fixture(({ body }) => ({ blocks: JSON.parse(body.messages[1].content).blocks }))
+  let wakes = 0
+  let requestKey
+  const server = createRewriteServer({ provider, articleService: { handle: async (payload, context) => { requestKey = context.requestKey; return { state: 'queued', action: payload.action } }, wake: async () => { wakes++ } } })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
+  const base = `http://127.0.0.1:${server.address().port}`
+  const result = await fetch(base + '/api/rewrite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ segments: ['First.', 'Second.'] }) })
+  assert.equal(result.status, 200)
+  assert.deepEqual((await result.json()).segments, ['First.', 'Second.'])
+  const article = await fetch(base + '/api/article', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start', url: 'https://en.wikipedia.org/wiki/Fact' }) })
+  assert.deepEqual(await article.json(), { state: 'queued', action: 'start' })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(wakes, 1)
+  assert.match(requestKey, /^[a-f0-9]{64}$/)
+})
+
+test('local HTTP client disconnect aborts its upstream request', async t => {
+  let upstreamSignal
+  let started
+  const upstreamStarted = new Promise(resolve => { started = resolve })
+  const provider = createProvider({ apiKey: 'test-key', fetchImpl: async (_url, options) => { upstreamSignal = options.signal; started(); return new Promise(() => {}) } })
+  const server = createRewriteServer({ provider })
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
+  const req = httpRequest({ host: '127.0.0.1', port: server.address().port, path: '/api/rewrite', method: 'POST', headers: { 'Content-Type': 'application/json' } })
+  req.on('error', () => {})
+  req.end(JSON.stringify({ blocks }))
+  await upstreamStarted
+  req.destroy()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(upstreamSignal.aborted, true)
+})
+
+test('local HTTP rejects large declared and streamed request bodies with a visible 413', async t => {
+  let generated = 0
+  const server = createRewriteServer({ provider: { rewrite: async () => { generated++; return { blocks: [] } } } })
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
+  const body = JSON.stringify({ segments: ['x'.repeat(PROVIDER_LIMITS.requestBytes + 1024)] })
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/rewrite`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+  assert.equal(response.status, 413)
+  assert.equal((await response.json()).code, 'input_too_large')
+  const streamedStatus = await new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port: server.address().port, path: '/api/rewrite', method: 'POST', headers: { 'Content-Type': 'application/json' } }, res => { res.resume(); res.once('end', () => resolve(res.statusCode)) })
+    req.once('error', reject)
+    req.write(body.slice(0, 80000)); req.end(body.slice(80000))
+  })
+  assert.equal(streamedStatus, 413)
+  assert.equal(generated, 0)
+})
+
+test('article HTTP preserves safe service errors and does not wake failed requests', async t => {
+  let wakes = 0
+  const error = Object.assign(new Error('Rate limited.'), { status: 429, retryAfter: 9, retryable: true })
+  const server = createRewriteServer({ provider: fixture().provider, articleService: { handle: async () => { throw error }, wake() { wakes++ } }, mapArticleError: value => ({ error: value.message, retryable: value.retryable }) })
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/article`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"action":"start"}' })
+  assert.equal(response.status, 429)
+  assert.equal(response.headers.get('Retry-After'), '9')
+  assert.deepEqual(await response.json(), { error: 'Rate limited.', retryable: true })
+  assert.equal(wakes, 0)
+})

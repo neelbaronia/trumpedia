@@ -1,306 +1,135 @@
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-
-loadLocalEnvFiles()
-
-const PORT = Number(process.env.REWRITE_PORT || 8787)
-const XAI_API_KEY = process.env.XAI_API_KEY
-const XAI_MODEL = process.env.XAI_MODEL || 'grok-4-1-fast'
-const XAI_API_BASE_URL = process.env.XAI_API_BASE_URL || 'https://api.x.ai/v1'
-
-const SYSTEM_PROMPT = [
-  'You are Donald Trump, current and greatest President of the United States. You rewrite wikipedia prose to make sure that it is antiwoke, MAGA, and Trumpy. You want it to sound like how you talk and tweet.',
-  'Rules:',
-  '- Return ONLY valid JSON: {"segments":["...", "..."]}.',
-  '- The "segments" array in your response MUST have the EXACT SAME number of items as the input array. This is very important, believe me.',
-  '- Do not combine segments. Do not split them. Do not add intro/outro text.',
-  '- Preserve factual meaning and chronology.',
-  '- Keep names, dates, places, and numbers accurate.',
-  '- Keep output count exactly equal to input count and same order.',
-  '- Keep roughly similar length per segment.',
-  '- CRITICAL: Preserve all leading and trailing whitespace. If a segment starts or ends with a space, the rewrite MUST also start or end with a space. This is very important for sentence structure!',
-  '- Opine on the topic and add your own thoughts and opinions. Try and compare everything to your own life and experiences.',
-  '- You are very traditional and conservative on questions of race, gender, sexuality, and politics.',
-  '- Reference your tweets and statements to add authenticity.',
-].join('\n')
-
-const OPINION_PROMPT = [
-  'You are Donald Trump, current and greatest President of the United States.',
-  'Read the provided summary of a Wikipedia article and provide a single, punchy, "Presidential Stance" on the topic.',
-  'Your stance should be roughly 2 sentences. It must be antiwoke, MAGA, and sound like how you talk and tweet.',
-  'Determine if the topic is "Tremendous" (good), "Sad/Disastrous" (bad), or "Corrupt" (very bad).',
-  'Return ONLY valid JSON: {"opinion": "..."}.',
-].join('\n')
+import { fileURLToPath } from 'node:url'
+import { createProvider, ProviderError, readRequestJson, safeProviderError } from '../supabase/functions/_shared/provider.mjs'
+import { createLegacyHandler, legacyCorsHeaders } from '../supabase/functions/_shared/legacy-http.mjs'
 
 function loadLocalEnvFiles() {
-  const files = ['.env.local', '.env']
-  for (const file of files) {
+  for (const file of ['.env.local', '.env']) {
     const fullPath = resolve(process.cwd(), file)
-    if (!existsSync(fullPath)) {
-      continue
+    if (!existsSync(fullPath)) continue
+    for (const rawLine of readFileSync(fullPath, 'utf8').split(/\r?\n/)) {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('#')) continue
+      const index = line.indexOf('=')
+      if (index <= 0) continue
+      const key = line.slice(0, index).trim()
+      if (!key || process.env[key] !== undefined) continue
+      let value = line.slice(index + 1).trim()
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1)
+      process.env[key] = value
     }
-
-    const content = readFileSync(fullPath, 'utf8')
-    applyEnvContent(content)
   }
 }
 
-function applyEnvContent(content) {
-  const lines = content.split(/\r?\n/)
-  for (const rawLine of lines) {
-    const line = rawLine.trim()
-    if (!line || line.startsWith('#')) {
-      continue
-    }
-
-    const index = line.indexOf('=')
-    if (index <= 0) {
-      continue
-    }
-
-    const key = line.slice(0, index).trim()
-    if (!key || process.env[key] !== undefined) {
-      continue
-    }
-
-    let value = line.slice(index + 1).trim()
-    const quoted =
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    if (quoted) {
-      value = value.slice(1, -1)
-    }
-
-    process.env[key] = value
-  }
+function json(body, status = 200, extra = {}) {
+  return new Response(JSON.stringify(body), { status, headers: {
+    ...legacyCorsHeaders, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extra,
+  } })
 }
 
-function sendJson(res, statusCode, payload) {
-  res.writeHead(statusCode, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST,OPTIONS',
-  })
-  res.end(JSON.stringify(payload))
+async function sendResponse(res, response) {
+  if (res.destroyed) return
+  res.writeHead(response.status, Object.fromEntries(response.headers))
+  res.end(Buffer.from(await response.arrayBuffer()))
 }
 
-async function readJson(req) {
-  const chunks = []
-  for await (const chunk of req) {
-    chunks.push(chunk)
-  }
-  const raw = Buffer.concat(chunks).toString('utf8')
-  if (!raw) return {}
-
-  try {
-    return JSON.parse(raw)
-  } catch {
-    throw new Error('Invalid JSON body.')
-  }
-}
-
-function validateSegments(input) {
-  if (!Array.isArray(input)) {
-    throw new Error('`segments` must be an array.')
-  }
-  if (input.length === 0) {
-    throw new Error('`segments` must not be empty.')
-  }
-  if (input.length > 60) {
-    throw new Error('`segments` exceeds max batch size of 60.')
-  }
-
-  return input.map((value) => String(value))
-}
-
-async function rewriteWithXai(segments, opinion = null) {
-  if (!XAI_API_KEY) {
-    throw new Error('XAI_API_KEY is not set.')
-  }
-
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-  ]
-
-  if (opinion) {
-    messages.push({
-      role: 'system',
-      content: `YOUR STANCE ON THIS TOPIC IS: ${opinion}. Every segment you rewrite must align with this opinion. If the opinion is negative, the segments should be critical. If the opinion is positive, the segments should be celebratory.`
-    })
-  }
-
-  messages.push({
-    role: 'user',
-    content: JSON.stringify({ segments }),
-  })
-
-  const response = await fetch(`${XAI_API_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${XAI_API_KEY}`,
-      'Content-Type': 'application/json',
+function requestBody(req) {
+  let cleanup = () => {}
+  return new ReadableStream({
+    start(controller) {
+      const data = chunk => { controller.enqueue(chunk); if (controller.desiredSize <= 0) req.pause() }
+      const end = () => { cleanup(); controller.close() }
+      const error = () => { cleanup(); controller.error(new Error('Request body disconnected.')) }
+      cleanup = () => { req.off('data', data); req.off('end', end); req.off('error', error); req.off('aborted', error) }
+      req.on('data', data); req.once('end', end); req.once('error', error); req.once('aborted', error)
     },
-    body: JSON.stringify({
-      model: XAI_MODEL,
-      temperature: 1,
-      response_format: { type: 'json_object' },
-      messages,
-    }),
+    pull() { req.resume() },
+    // Rejecting an oversized body must still let HTTP deliver its 413 response.
+    cancel() { cleanup(); req.resume() },
   })
-
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`xAI request failed (${response.status}): ${text.slice(0, 300)}`)
-  }
-
-  const data = await response.json()
-  const content = data?.choices?.[0]?.message?.content
-  if (typeof content !== 'string') {
-    throw new Error('xAI response did not include JSON content.')
-  }
-
-  let parsed
-  try {
-    parsed = JSON.parse(content)
-  } catch {
-    throw new Error('Model returned non-JSON output.')
-  }
-
-  const rewritten = parsed?.segments
-  if (!Array.isArray(rewritten)) {
-    throw new Error('Model returned invalid response format.')
-  }
-
-  // If the count is wrong, try to pad or trim to match input segments
-  if (rewritten.length !== segments.length) {
-    console.warn(`[rewrite] segment count mismatch: expected ${segments.length}, got ${rewritten.length}. Attempting to fix...`)
-    const fixed = []
-    for (let i = 0; i < segments.length; i++) {
-      fixed.push(rewritten[i] || segments[i]) // Use original if AI missed it
-    }
-    return fixed
-  }
-
-  return rewritten.map((value) => String(value))
 }
 
-async function getOpinionFromXai(summary) {
-  if (!XAI_API_KEY) {
-    throw new Error('XAI_API_KEY is not set.')
-  }
-
-  const response = await fetch(`${XAI_API_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${XAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: XAI_MODEL,
-      temperature: 1,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: OPINION_PROMPT },
-        {
-          role: 'user',
-          content: `Summary: ${summary.slice(0, 2000)}`,
-        },
-      ],
-    }),
+// Importing this module never reads credentials, opens a port, or calls a provider.
+export function createRewriteServer({ provider, articleService, mapArticleError } = {}) {
+  const rewrite = createLegacyHandler({ provider, operation: 'rewrite', requireBudget: false })
+  const opinion = createLegacyHandler({ provider, operation: 'opinion', requireBudget: false })
+  return createServer(async (req, res) => {
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    const disconnected = () => { if (!res.writableEnded) abort() }
+    req.once('aborted', abort)
+    res.once('close', disconnected)
+    let response
+    try {
+      const url = new URL(req.url || '/', 'http://127.0.0.1')
+      if (req.method === 'OPTIONS') response = new Response(null, { status: 204, headers: legacyCorsHeaders })
+      else if (req.method === 'GET' && url.pathname === '/health') response = json({ ok: true, provider: 'xai', model: provider.model, hasApiKey: provider.configured })
+      else {
+        const headers = new Headers()
+        for (const [name, value] of Object.entries(req.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value)
+        const request = new Request(url, {
+          method: req.method, headers, signal: controller.signal,
+          ...(!['GET', 'HEAD'].includes(req.method || 'GET') ? { body: requestBody(req), duplex: 'half' } : {}),
+        })
+        if (url.pathname === '/api/rewrite') response = await rewrite(request)
+        else if (url.pathname === '/api/opinion') response = await opinion(request)
+        else if (url.pathname === '/api/article' && req.method === 'POST' && articleService) {
+          try {
+            const payload = await readRequestJson(request)
+            const requestKey = createHash('sha256').update(req.socket.remoteAddress || 'local').digest('hex')
+            const result = await articleService.handle(payload, { requestKey })
+            response = json(result)
+            // Jobs outlive the browser request. Wake owns bounded worker dispatch.
+            setImmediate(() => { Promise.resolve(articleService.wake()).catch(() => {}) })
+          } catch (error) {
+            const safe = mapArticleError && !(error instanceof ProviderError)
+              ? { body: mapArticleError(error), status: Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599 ? error.status : 503, headers: error?.retryAfter ? { 'Retry-After': String(error.retryAfter) } : {} }
+              : safeProviderError(error)
+            response = json(safe.body, safe.status, safe.headers)
+          }
+        } else if (url.pathname === '/api/article' && articleService) response = json({ error: 'Use POST for articles.', retryable: false }, 405, { Allow: 'POST, OPTIONS' })
+        else response = json({ error: 'Not found', retryable: false }, 404)
+      }
+      await sendResponse(res, response)
+    } catch (error) {
+      const safe = safeProviderError(error)
+      if (!res.headersSent) await sendResponse(res, json(safe.body, safe.status, safe.headers))
+      else res.destroy()
+    } finally {
+      req.off('aborted', abort)
+      res.off('close', disconnected)
+    }
   })
-
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`xAI opinion request failed (${response.status}): ${text.slice(0, 300)}`)
-  }
-
-  const data = await response.json()
-  const content = data?.choices?.[0]?.message?.content
-  const parsed = JSON.parse(content)
-  return parsed.opinion || "This topic is very interesting, believe me!"
 }
 
-const server = createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') {
-    return sendJson(res, 200, { ok: true })
-  }
+async function main() {
+  loadLocalEnvFiles()
+  const provider = createProvider({
+    apiKey: process.env.XAI_API_KEY,
+    model: process.env.XAI_MODEL || undefined,
+    baseUrl: process.env.XAI_API_BASE_URL || undefined,
+    reasoningEffort: process.env.XAI_REASONING_EFFORT || undefined,
+    onMetric: metric => console.log(JSON.stringify({ event: 'provider_attempt', ...metric })),
+  })
+  const [{ JSDOM }, { createArticleService, createMemoryStore, safeJobError }] = await Promise.all([
+    import('jsdom'), import('../supabase/functions/_shared/article-jobs.mjs'),
+  ])
+  const articleService = createArticleService({
+    store: createMemoryStore(), provider, model: provider.model,
+    parseDocument: html => new JSDOM(html).window.document,
+  })
+  const server = createRewriteServer({ provider, articleService, mapArticleError: safeJobError })
+  server.once('close', () => articleService.close())
+  server.requestTimeout = 10000
+  server.headersTimeout = 10000
+  const port = Number(process.env.REWRITE_PORT || 8787)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('REWRITE_PORT must be a valid port.')
+  server.listen(port, '127.0.0.1', () => console.log(`Rewrite server listening at http://127.0.0.1:${port}`))
+}
 
-  if (req.method === 'GET' && req.url === '/health') {
-    return sendJson(res, 200, {
-      ok: true,
-      provider: 'xai',
-      model: XAI_MODEL,
-      hasApiKey: Boolean(XAI_API_KEY),
-      baseUrl: XAI_API_BASE_URL,
-    })
-  }
-
-  if (req.method === 'POST' && req.url === '/api/rewrite') {
-    const startTime = Date.now()
-    try {
-      const body = await readJson(req)
-      const segments = validateSegments(body.segments)
-      const opinion = body.opinion || null
-      // eslint-disable-next-line no-console
-      console.log(`[rewrite] request segments=${segments.length} started with opinion=${opinion ? 'yes' : 'no'}`)
-      const rewritten = await rewriteWithXai(segments, opinion)
-      const duration = Date.now() - startTime
-      // eslint-disable-next-line no-console
-      console.log(`[rewrite] request segments=${segments.length} finished in ${duration}ms`)
-      return sendJson(res, 200, {
-        segments: rewritten,
-        provider: 'xai',
-        model: XAI_MODEL,
-        duration,
-      })
-    } catch (error) {
-      const duration = Date.now() - startTime
-      // eslint-disable-next-line no-console
-      console.error(`[rewrite] request failed after ${duration}ms`, error instanceof Error ? error.message : error)
-      return sendJson(res, 400, {
-        error: error instanceof Error ? error.message : 'Rewrite failed.',
-        duration,
-      })
-    }
-  }
-
-  if (req.method === 'POST' && req.url === '/api/opinion') {
-    const startTime = Date.now()
-    try {
-      const body = await readJson(req)
-      const summary = body.summary || ''
-      if (!summary) throw new Error('Summary is required for opinion.')
-
-      // eslint-disable-next-line no-console
-      console.log(`[opinion] request started`)
-      const opinion = await getOpinionFromXai(summary)
-      const duration = Date.now() - startTime
-      // eslint-disable-next-line no-console
-      console.log(`[opinion] request finished in ${duration}ms`)
-
-      return sendJson(res, 200, {
-        opinion,
-        provider: 'xai',
-        model: XAI_MODEL,
-        duration,
-      })
-    } catch (error) {
-      const duration = Date.now() - startTime
-      // eslint-disable-next-line no-console
-      console.error(`[opinion] request failed after ${duration}ms`, error instanceof Error ? error.message : error)
-      return sendJson(res, 400, {
-        error: error instanceof Error ? error.message : 'Opinion generation failed.',
-        duration,
-      })
-    }
-  }
-
-  return sendJson(res, 404, { error: 'Not found' })
-})
-
-server.listen(PORT, '127.0.0.1', () => {
-  // eslint-disable-next-line no-console
-  console.log(`Rewrite server listening at http://127.0.0.1:${PORT}`)
-})
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(() => { console.error('The local generation server could not start. Check its configuration.'); process.exitCode = 1 })
+}

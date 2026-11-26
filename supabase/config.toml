@@ -1,0 +1,5 @@
+project_id = "trumpedia"
+
+# Public actions enforce admission/rate checks; internal work requires service auth or a scoped HMAC.
+[functions.article]
+verify_jwt = false

@@ -22,7 +22,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying; no build step for now
   deploy:
     environment:
       name: github-pages
@@ -37,20 +36,23 @@ jobs:
           node-version: 20
           cache: 'npm'
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: Lint
+        run: npm run lint
       - name: Build
         run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_REWRITE_API_URL: ${{ secrets.VITE_REWRITE_API_URL }}
-          VITE_NTFY_TOPIC: trumpedia
+          VITE_ARTICLE_API_URL: ${{ secrets.VITE_ARTICLE_API_URL }}
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
           path: './dist'
       - name: Deploy to GitHub Pages
         id: deployment
