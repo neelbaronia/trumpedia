@@ -464,12 +464,25 @@ test('slow generation and review persist separate private phases without duplica
   saved = f.store.snapshot()[0]
   assert.equal(Object.keys(saved.pendingDrafts).length, 4, 'Four serialized checkpoint patches merge at execution instead of overwriting siblings')
   assert.deepEqual(saved.outputs, {}); assert.equal(f.calls.length, 5); assert.equal(f.reviews.length, 1)
+  assert.deepEqual((await f.service.status(job)).activity, { phase: 'reviewing', drafted: 4 })
+  assert.equal((await f.service.status({ ...job, updatedAt: saved.updatedAt })).activity, undefined, 'An unchanged metadata-only response does not guess a new phase without the plan')
   assert.doesNotMatch(JSON.stringify(await f.service.status(job)), /pendingDrafts|Here is a tremendous/)
   await f.service.dispatch()
   saved = f.store.snapshot()[0]
   assert.equal(saved.status, 'complete'); assert.equal(Object.keys(saved.outputs).length, 4)
   assert.deepEqual(saved.pendingDrafts, {}); assert.equal(f.calls.length, 5); assert.equal(f.reviews.length, 5)
   assert.equal(saved.metrics.calls, 10); assert.equal(saved.metrics.costUsdTicks, 1000)
+})
+
+test('fifteen-second paragraph drafts can be reviewed in the same bounded worker run', async () => {
+  const slow = async (_input, ctx) => { await new Promise(resolve => setTimeout(resolve, 2)); ctx.atLeast(ctx.now + 15000) }
+  const f = fixture({ html: source(4), providerHook: async (input, ctx) => { if (input.blocks) await slow(input, ctx) }, reviewHook: async (input, ctx) => { if (input.kind === 'rewrite') await slow(input, ctx) } })
+  const job = await f.service.start({ url: wiki('ReviewHeadroom') })
+  await f.service.dispatch()
+  const saved = f.store.snapshot()[0]
+  assert.equal(saved.status, 'complete'); assert.equal(Object.keys(saved.outputs).length, 4)
+  assert.equal(f.calls.length, 5); assert.equal(f.reviews.length, 5)
+  assert.equal((await f.service.status(job)).completed, 4)
 })
 
 test('a bounded seventy-five-second paragraph draft checkpoints before a separate review slice', async () => {

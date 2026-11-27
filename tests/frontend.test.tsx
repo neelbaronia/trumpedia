@@ -81,6 +81,32 @@ afterEach(async () => {
   dom = undefined
 })
 
+test('zero-approved jobs display repair activity and draft counts without a fake percentage', async () => {
+  const fake = controlledServices(); await mount(fake.services)
+  await act(async () => fake.calls[0].options.onStatus?.({ status: 'running', jobId: 'saved-job', progress: 0, completed: 0, total: 9, activity: { phase: 'revising', drafted: 2 } }))
+  assert.match(document.body.textContent || '', /Reworking passages that need another check/)
+  assert.match(document.body.textContent || '', /2 passages drafted and awaiting review/)
+  assert.match(document.body.textContent || '', /0 of 9 passages approved/)
+  assert.equal(document.querySelector('[role="progressbar"]')?.hasAttribute('aria-valuenow'), false)
+  assert.doesNotMatch(document.querySelector('.progress-text')?.textContent || '', /0%/)
+  await click(Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Stop loading')!)
+  await click(Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Continue watching')!)
+  assert.equal(fake.calls.length, 2)
+  assert.equal(fake.calls[1].options.retry, false, 'Watching again does not buy a new retry run')
+})
+
+test('late metadata from a previous article cannot overwrite the next article activity', async () => {
+  const fake = controlledServices(); await mount(fake.services)
+  await act(async () => { window.history.pushState(null, '', `/?url=${encodeURIComponent(beta)}`); window.dispatchEvent(new window.PopStateEvent('popstate')) })
+  await settle()
+  await act(async () => {
+    fake.calls[1].options.onStatus?.({ status: 'running', progress: 0, total: 3, completed: 0, activity: { phase: 'preparing', drafted: 0 } })
+    fake.calls[0].options.onStatus?.({ status: 'running', progress: 0, total: 99, completed: 0, activity: { phase: 'revising', drafted: 50 } })
+  })
+  assert.match(document.body.textContent || '', /0 of 3 passages approved/)
+  assert.doesNotMatch(document.body.textContent || '', /50 passages|99 passages/)
+})
+
 test('StrictMode starts one URL generation and aborts it on unmount', async () => {
   const fake = controlledServices()
   await mount(fake.services, alpha, true)

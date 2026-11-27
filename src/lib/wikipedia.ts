@@ -3,6 +3,8 @@ export { parseWikipediaUrl }
 
 export type ParsedWikipediaUrl = ReturnType<typeof parseWikipediaUrl>
 export type JobStatus = 'queued' | 'running' | 'complete' | 'partial' | 'failed'
+export type ArticleActivity = { phase: 'source' | 'preparing' | 'writing' | 'reviewing' | 'revising'; drafted: number }
+export type ArticleProgress = { status: JobStatus; jobId?: string; progress: number; completed?: number; total?: number; activity?: ArticleActivity }
 export type ArticleSection = { id: string; title: string; html: string; complete: boolean }
 export type WikipediaArticle = {
   title: string
@@ -33,10 +35,12 @@ type JobView = {
   article?: WikipediaArticle
   error?: string
   retryable?: boolean
+  activity?: ArticleActivity
 }
 type RequestOptions = {
   signal?: AbortSignal
   onUpdate?: (article: WikipediaArticle) => void
+  onStatus?: (status: ArticleProgress) => void
   retry?: boolean
   fetch?: typeof fetch
   pollIntervalMs?: number
@@ -197,9 +201,17 @@ export async function fetchAndRewriteArticle(
   const deadline = Date.now() + watchMs
   let view: JobView = await request({ action: options.retry ? 'retry' : 'start', url: url.canonicalUrl }, options, deadline)
   let article: WikipediaArticle | undefined
+  let lastStatus: ArticleProgress | undefined
   let transientFailures = 0
   while (true) {
     checkAborted(options.signal)
+    const counts = typeof view.progress === 'object' ? view.progress : undefined
+    const completed = view.completed ?? counts?.completed ?? lastStatus?.completed
+    const total = view.total ?? counts?.total ?? lastStatus?.total
+    const progress = typeof view.progress === 'number' ? view.progress : view.status === 'complete' ? 100 : total ? (completed ?? 0) / total * 100 : lastStatus?.progress ?? 0
+    lastStatus = { status: view.status, jobId: view.jobId ?? lastStatus?.jobId, progress, completed, total, activity: view.activity ?? lastStatus?.activity }
+    options.onStatus?.(lastStatus)
+    onProgress?.(progress)
     const next = articleFrom(view, article)
     if (next && !view.unchanged) { article = next; options.onUpdate?.(next) }
     if (view.status === 'complete' || view.status === 'partial') {
@@ -207,7 +219,6 @@ export async function fetchAndRewriteArticle(
       return article
     }
     if (view.status === 'failed') throw new Error(view.error || 'Generation paused. Retry to continue from the saved sections.')
-    onProgress?.(article?.progress ?? 0)
     if (!view.jobId) throw new Error('The article service did not return a job identifier.')
     await waitWithinDeadline(options.pollIntervalMs ?? (view.status === 'queued' ? 2500 : 1200), deadline, options.signal)
     try {
