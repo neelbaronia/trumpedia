@@ -39,6 +39,15 @@ test('progressive and unchanged responses preserve the last full snapshot', asyn
   assert.deepEqual(updates, ['<p>Lead</p>', '<p>Lead</p><p>History</p>'])
   assert.equal(result.sections?.length, 2)
 })
+test('the client includes approved paragraph HTML from an unfinished section', async () => {
+  const updates: string[] = []
+  const views = [
+    { status: 'running', jobId: 'job', progress: 50, article: { ...article, sections: [{ id: 'lead', title: 'Intro', html: '<p>Approved paragraph.</p>', complete: false }] } },
+    { status: 'complete', jobId: 'job', progress: 100, article: { ...article, sections: [{ id: 'lead', title: 'Intro', html: '<p>Approved paragraph.</p><p>The next paragraph.</p>', complete: true }] } },
+  ]
+  await fetchAndRewriteArticle(url, undefined, { fetch: async () => response(views.shift()), pollIntervalMs: 0, onUpdate: value => updates.push(value.html) })
+  assert.deepEqual(updates, ['<p>Approved paragraph.</p>', '<p>Approved paragraph.</p><p>The next paragraph.</p>'])
+})
 test('cancellation stops watching without trying to cancel the shared server job', async () => {
   const controller = new AbortController()
   let requests = 0

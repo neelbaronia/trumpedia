@@ -159,6 +159,38 @@ test('finished sections appear before completion and survive a watcher error and
   assert.equal(Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Retry unfinished sections'), false)
 })
 
+test('paragraphs appear before any section finishes and preserve neighboring text and selection', async () => {
+  const fake = controlledServices(); await mount(fake.services)
+  const first = '<p data-trumpedia-unit="u00000" id="first-ready">A reviewed paragraph with a <a href="https://en.wikipedia.org/wiki/Beta">working link</a>.</p>'
+  const waiting = '<p data-trumpedia-unit="u00001"><span class="paragraph-placeholder" aria-hidden="true"><span></span></span></p>'
+  const snapshot = (html: string, complete = false) => article('Alpha', {
+    status: complete ? 'complete' : 'running', rewriteMode: complete ? 'llm' : 'llm-partial',
+    progress: complete ? 100 : 50, completed: complete ? 2 : 1, total: 2, html,
+    sections: [{ id: 'lead', title: 'Introduction', html, complete }],
+  })
+  await act(async () => fake.calls[0].options.onUpdate?.(snapshot(first + waiting)))
+  assert.ok(document.querySelector('h1'))
+  assert.match(document.querySelector('.section-rewrite-status')?.textContent || '', /More paragraphs/)
+  const paragraph = document.getElementById('first-ready')!
+  assert.ok(paragraph)
+  assert.match(paragraph.querySelector('a')?.getAttribute('href') || '', /url=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FBeta/)
+  const text = paragraph.firstChild!
+  const range = document.createRange(); range.setStart(text, 2); range.setEnd(text, 10)
+  window.getSelection()!.addRange(range)
+  const selected = window.getSelection()!.toString()
+  const observer = new MutationObserver(() => {})
+  observer.observe(paragraph, { childList: true, subtree: true, characterData: true, attributes: true })
+  const done = snapshot(first + '<p data-trumpedia-unit="u00001" id="second-ready">A second approved paragraph.</p>', true)
+  await act(async () => fake.calls[0].result.resolve(done))
+  assert.equal(document.getElementById('first-ready'), paragraph)
+  assert.equal(paragraph.firstChild, text)
+  assert.equal(window.getSelection()!.toString(), selected)
+  assert.equal(observer.takeRecords().length, 0)
+  assert.equal(document.getElementById('second-ready')?.textContent, 'A second approved paragraph.')
+  assert.equal(document.querySelector('.paragraph-placeholder'), null)
+  observer.disconnect()
+})
+
 test('leaving a request aborts it and its late callbacks cannot replace a newer article', async () => {
   const fake = controlledServices()
   await mount(fake.services)

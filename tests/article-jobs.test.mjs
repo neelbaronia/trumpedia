@@ -107,6 +107,27 @@ test('the first body paragraph checkpoints and becomes readable while other sing
   const complete = await f.service.status(job); assert.equal(complete.status, 'complete'); assert.deepEqual(complete.article.metrics.stages, { opinion: 1, 'opinion-review': 1, body: 9, review: 9 })
 })
 
+test('a reviewed paragraph is published while drafted neighbors in the same section stay private', async () => {
+  let release; const gate = new Promise(resolve => { release = resolve })
+  let reviewing; const pending = new Promise(resolve => { reviewing = resolve })
+  const f = fixture({ html: source(3), reviewHook: async input => {
+    if (input.kind === 'rewrite' && input.blocks[0].id !== 'u00000-0') { reviewing(); await gate }
+  } })
+  const job = await f.service.start({ url: wiki('ParagraphProgress') })
+  const work = f.service.dispatch()
+  try {
+    await pending; await new Promise(resolve => setImmediate(resolve))
+    const mid = await f.service.status(job)
+    assert.equal(mid.completed, 1); assert.equal(mid.total, 3)
+    assert.equal(mid.article.sections.length, 1); assert.equal(mid.article.sections[0].complete, false)
+    const html = mid.article.sections[0].html
+    assert.match(html, /0: Here is a tremendous/)
+    assert.doesNotMatch(html, /1:|2:|This is an important/)
+    assert.equal(parseDocument(html).querySelectorAll('.paragraph-placeholder').length, 2)
+  } finally { release(); await work }
+  assert.equal((await f.service.status(job)).status, 'complete')
+})
+
 test('successful long article resumes immediately across bounded invocations instead of sleeping until deadline', async () => {
   const f = fixture({ html: source(29), providerHook: async (_input, ctx) => { await new Promise(resolve => setTimeout(resolve, 2)); ctx.atLeast(ctx.now + 25000) } })
   const job = await f.service.start({ url: wiki('Long') }); await f.service.dispatch()

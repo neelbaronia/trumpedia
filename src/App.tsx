@@ -21,8 +21,7 @@ const plainClick = (event: MouseEvent<HTMLElement>) => event.button === 0 && !ev
 function hasVisibleContent(value: WikipediaArticle | null): boolean {
   if (!value) return false
   if (!value.sections?.length) return Boolean(value.html)
-  return value.sections.some(section => section.complete && Boolean(section.html)) ||
-    ((value.status === 'partial' || value.status === 'failed') && value.sections.some(section => Boolean(section.html)))
+  return value.sections.some(section => Boolean(section.html))
 }
 
 function preserveFinishedSections(previous: WikipediaArticle | null, next: WikipediaArticle): WikipediaArticle {

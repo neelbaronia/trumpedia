@@ -188,7 +188,7 @@ function articleFrom(view: JobView, previous?: WikipediaArticle): WikipediaArtic
     error: view.error ?? view.article?.error,
     retryable: view.retryable ?? view.article?.retryable ?? previous?.retryable,
   } as WikipediaArticle
-  if (article.sections) article.html = article.sections.filter(section => section.complete || ['complete', 'partial', 'failed'].includes(view.status)).map(section => section.html).join('')
+  if (article.sections) article.html = article.sections.map(section => section.html).join('')
   return article
 }
 export async function fetchAndRewriteArticle(

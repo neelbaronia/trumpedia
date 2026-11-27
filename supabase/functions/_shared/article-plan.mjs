@@ -251,16 +251,26 @@ export function renderArticle(plan, outputs = {}, options = {}) {
   const originals = new Map(plan.blocks.map(block => [block.id, block.text]))
   const valid = new Set(plan.blocks.filter(block => validateMarkers(block.text, outputs[block.id])).map(block => block.id))
   const renderedUnits = new Map()
+  const readableBlocks = new Set()
   for (const unit of plan.units) {
+    // A long paragraph may have multiple model blocks. Publish it only after
+    // every block is approved; its source text stays hidden while work continues.
+    const ready = unit.blockIds.every(id => valid.has(id))
+    if (ready) unit.blockIds.forEach(id => readableBlocks.add(id))
+    const openHtml = unit.openHtml.replace(/>$/, ` data-trumpedia-unit="${unit.id}">`)
+    if (!ready && !options.finished) {
+      renderedUnits.set(unit.id, openHtml + '<span class="paragraph-placeholder" aria-hidden="true"><span></span><span></span></span>' + unit.closeHtml)
+      continue
+    }
     let text = unit.blockIds.map(id => valid.has(id) ? outputs[id] : originals.get(id) || '').join('')
     text = escapeHtml(text)
     const slots = new Map(unit.slots.map(slot => [escapeHtml(slot.marker), slot.html]))
     text = text.replace(/&lt;keep id=&quot;\d+&quot;&gt;[\s\S]*?&lt;\/keep&gt;|__TRUMPEDIA_\d+__/g, marker => slots.get(marker) || marker)
-    renderedUnits.set(unit.id, unit.openHtml + text + unit.closeHtml)
+    renderedUnits.set(unit.id, openHtml + text + unit.closeHtml)
   }
   const sections = plan.sections.map(section => {
     const ready = section.blockIds.every(id => valid.has(id))
-    const visible = ready || Boolean(options.finished)
+    const visible = ready || section.blockIds.some(id => readableBlocks.has(id)) || Boolean(options.finished)
     let html = visible ? section.template : ''
     if (visible) html = html.replace(/<!--TRUMPEDIA_UNIT_(u\d+)-->/g, (_whole, id) => renderedUnits.get(id) || '')
     return { id: section.id, title: section.title, html, complete: ready }

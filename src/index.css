@@ -1117,11 +1117,14 @@ body {
   font-size: 0.8rem;
 }
 
-.section-placeholder {
+.section-placeholder,
+.paragraph-placeholder {
+  display: block;
   padding: 0.5rem 0 1rem;
 }
 
-.section-placeholder span {
+.section-placeholder span,
+.paragraph-placeholder span {
   display: block;
   width: 90%;
   height: 0.8rem;
@@ -1132,6 +1135,7 @@ body {
 
 .section-placeholder span:nth-child(2) { width: 96%; }
 .section-placeholder span:nth-child(3) { width: 64%; }
+.paragraph-placeholder span:nth-child(2) { width: 64%; }
 
 @media (prefers-reduced-motion: reduce) {
   .cursor-shine,
