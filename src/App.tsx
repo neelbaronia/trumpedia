@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import { fetchAndRewriteArticle, fetchRecentArticles, parseWikipediaUrl } from './lib/wikipedia'
-import type { WikipediaArticle } from './lib/wikipedia'
+import type { ArticleProgress, WikipediaArticle } from './lib/wikipedia'
 import { ArticleBody } from './components/ArticleBody'
 import { GoldenShine, PatrioticEffects } from './components/ArticleEffects'
 import { RewriteProgress } from './components/RewriteProgress'
@@ -9,7 +9,7 @@ import { articleDestination, articleHref, contentsFromHtml, sectionAnchor } from
 
 type LoadState = 'landing' | 'loading' | 'article' | 'error'
 type RecentArticle = { url: string; title: string }
-type LoadOptions = { signal?: AbortSignal; onUpdate?: (article: WikipediaArticle) => void; retry?: boolean }
+type LoadOptions = { signal?: AbortSignal; onUpdate?: (article: WikipediaArticle) => void; onStatus?: (status: ArticleProgress) => void; retry?: boolean }
 export type AppServices = {
   loadArticle: (input: string, onProgress?: (progress: number) => void, options?: LoadOptions) => Promise<WikipediaArticle>
   loadRecent: (signal?: AbortSignal) => Promise<RecentArticle[]>
@@ -21,8 +21,7 @@ const plainClick = (event: MouseEvent<HTMLElement>) => event.button === 0 && !ev
 function hasVisibleContent(value: WikipediaArticle | null): boolean {
   if (!value) return false
   if (!value.sections?.length) return Boolean(value.html)
-  return value.sections.some(section => section.complete && Boolean(section.html)) ||
-    ((value.status === 'partial' || value.status === 'failed') && value.sections.some(section => Boolean(section.html)))
+  return value.sections.some(section => Boolean(section.html))
 }
 
 function preserveFinishedSections(previous: WikipediaArticle | null, next: WikipediaArticle): WikipediaArticle {
@@ -47,6 +46,7 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
   const [error, setError] = useState('')
   const [article, setArticle] = useState<WikipediaArticle | null>(null)
   const [progress, setProgress] = useState(0)
+  const [jobProgress, setJobProgress] = useState<ArticleProgress | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isShaking, setIsShaking] = useState(false)
   const [validationError, setValidationError] = useState('')
@@ -83,6 +83,7 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
     if (history === 'push') window.history.pushState(null, '', window.location.pathname)
     setStatus('landing')
     setArticle(null)
+    setJobProgress(null)
     setError('')
     setValidationError('')
     setIsGenerating(false)
@@ -131,6 +132,7 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
     setArticle(previous)
     setStatus(hasVisibleContent(previous) ? 'article' : 'loading')
     setError('')
+    setJobProgress(null)
     const readyBeforeRetry = previous?.sections?.length
       ? (previous.sections.filter(section => section.complete).length / previous.sections.length) * 100
       : 0
@@ -157,7 +159,7 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
       setStatus(hasVisibleContent(snapshot) ? 'article' : 'loading')
     }
     try {
-      const result = await services.loadArticle(canonicalUrl, value => { if (isCurrent()) setProgress(percent(value)) }, { signal: controller.signal, onUpdate: update, retry: options.retry })
+      const result = await services.loadArticle(canonicalUrl, value => { if (isCurrent()) setProgress(percent(value)) }, { signal: controller.signal, onUpdate: update, onStatus: value => { if (isCurrent()) setJobProgress(value) }, retry: options.retry })
       if (!isCurrent()) return
       update(result)
       setStatus(hasVisibleContent(currentArticle.current) ? 'article' : 'error')
@@ -253,10 +255,13 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
     : contentsFromHtml(article?.html || ''), [article?.html, article?.sections])
   const unfinished = Boolean(article && (article.status === 'partial' || article.status === 'failed' || article.rewriteMode !== 'llm' || (article.failedCount || 0) > 0))
   const unchanged = article?.status === 'complete' && article.rewriteMode === 'heuristic'
-  const canContinueWatching = article?.status === 'queued' || article?.status === 'running'
+  const activeJobStatus = jobProgress?.status ?? article?.status
+  const canContinueWatching = activeJobStatus === 'queued' || activeJobStatus === 'running'
   const timeLimitReached = article?.status === 'partial' && /deadline|time limit/i.test(article.error || '')
   const savedCountText = article?.total ? `${article.completed || 0} of ${article.total} passages saved.` : ''
-  const progressCounts = article?.total !== undefined
+  const progressCounts = jobProgress?.total !== undefined
+    ? { completed: jobProgress.completed || 0, total: jobProgress.total, passages: true }
+    : article?.total !== undefined
     ? { completed: article.completed || 0, total: article.total, passages: true }
     : { completed: article?.sections?.filter(section => section.complete).length, total: article?.sections?.length }
   const retryUrl = article?.canonicalUrl || urlInput
@@ -455,14 +460,14 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
 
             <main className="wiki-content-container">
               {status === 'loading' && (
-                <RewriteProgress progress={progress} queued={article?.status === 'queued'} {...progressCounts} onStop={stopLoading} />
+                <RewriteProgress progress={progress} queued={activeJobStatus === 'queued'} activity={jobProgress?.activity} {...progressCounts} onStop={stopLoading} />
               )}
 
               {status === 'error' && (
                 <div className="status-page error">
                   <h2>Could not load article</h2>
                   <p>{error}</p>
-                  <button type="button" className="rewrite-secondary-button" onClick={retry}>Try again</button>
+                  <button type="button" className="rewrite-secondary-button" onClick={retry}>{canContinueWatching ? 'Continue watching' : 'Try again'}</button>
                 </div>
               )}
 
@@ -482,7 +487,7 @@ function App({ services = DEFAULT_SERVICES }: { services?: AppServices }) {
 
                   <p className="parody-notice">{unchanged ? 'Original Wikipedia content. No prose was rewritten for this page.' : 'AI-generated parody, not written by Donald Trump. Check the original for facts.'}</p>
 
-                  {isGenerating && <RewriteProgress compact progress={progress} queued={article.status === 'queued'} {...progressCounts} onStop={stopLoading} />}
+                  {isGenerating && <RewriteProgress compact progress={progress} queued={activeJobStatus === 'queued'} activity={jobProgress?.activity} {...progressCounts} onStop={stopLoading} />}
 
                   {!isGenerating && (error || unfinished) && <div className="rewrite-notice" role="status">
                     <p>{error || (timeLimitReached ? 'Generation paused at its time limit. Finished passages are saved.' : article.error || (unchanged ? 'No eligible prose was found to rewrite. This page shows the original Wikipedia content.' : article.failedCount ? `${article.failedCount} ${article.failedCount === 1 ? 'passage needs' : 'passages need'} another pass.` : 'Some text could not be fully rewritten. Finished sections are kept.'))}</p>

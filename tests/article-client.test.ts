@@ -5,6 +5,20 @@ const url = 'https://en.wikipedia.org/wiki/Test'
 const article = { title: 'Test', html: '<p>Legacy body</p>', canonicalUrl: url, sourceApiUrl: '', rewriteMode: 'llm' as const }
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status })
 
+test('job activity and counts reach the UI before the first approved article exists', async () => {
+  const statuses: unknown[] = []; const progress: number[] = []; const updates: unknown[] = []
+  const views = [
+    { status: 'queued', jobId: 'job', progress: 0, completed: 0, total: 0, activity: { phase: 'source', drafted: 0 } },
+    { status: 'running', jobId: 'job', progress: 0, completed: 0, total: 9, activity: { phase: 'revising', drafted: 2 } },
+    { status: 'running', jobId: 'job', unchanged: true, progress: 0, completed: 0, total: 9 },
+    { status: 'complete', jobId: 'job', progress: 100, completed: 9, total: 9, article },
+  ]
+  await fetchAndRewriteArticle(url, value => progress.push(value), { fetch: async () => response(views.shift()), pollIntervalMs: 0, onStatus: value => statuses.push(value), onUpdate: value => updates.push(value) })
+  assert.deepEqual(progress, [0, 0, 0, 100])
+  assert.equal(updates.length, 1, 'No unapproved article content is synthesized for progress')
+  assert.deepEqual(statuses[2], { status: 'running', jobId: 'job', progress: 0, completed: 0, total: 9, activity: { phase: 'revising', drafted: 2 } })
+})
+
 test('a cached article returns immediately without polling or starting model work in the browser', async () => {
   const requests: Record<string,unknown>[] = []
   const result = await fetchAndRewriteArticle(url, undefined, { fetch: async (_url, init) => {
@@ -24,6 +38,15 @@ test('progressive and unchanged responses preserve the last full snapshot', asyn
   const result = await fetchAndRewriteArticle(url, undefined, { fetch: async () => response(views.shift()), pollIntervalMs: 0, onUpdate: value => updates.push(value.html) })
   assert.deepEqual(updates, ['<p>Lead</p>', '<p>Lead</p><p>History</p>'])
   assert.equal(result.sections?.length, 2)
+})
+test('the client includes approved paragraph HTML from an unfinished section', async () => {
+  const updates: string[] = []
+  const views = [
+    { status: 'running', jobId: 'job', progress: 50, article: { ...article, sections: [{ id: 'lead', title: 'Intro', html: '<p>Approved paragraph.</p>', complete: false }] } },
+    { status: 'complete', jobId: 'job', progress: 100, article: { ...article, sections: [{ id: 'lead', title: 'Intro', html: '<p>Approved paragraph.</p><p>The next paragraph.</p>', complete: true }] } },
+  ]
+  await fetchAndRewriteArticle(url, undefined, { fetch: async () => response(views.shift()), pollIntervalMs: 0, onUpdate: value => updates.push(value.html) })
+  assert.deepEqual(updates, ['<p>Approved paragraph.</p>', '<p>Approved paragraph.</p><p>The next paragraph.</p>'])
 })
 test('cancellation stops watching without trying to cancel the shared server job', async () => {
   const controller = new AbortController()

@@ -128,6 +128,13 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
   function publicResult(job, includeArticle = true) {
     const counts = job.plan ? metricsFor(job) : { progress: job.progress || 0, completed: job.completed || 0, total: job.total || 0, failedCount: job.failedCount || 0 }
     const result = { jobId: job.id, version: job.version || 'unknown', outdated: job.version !== version || Boolean(job.importedFromLegacy), status: job.status, updatedAt: job.updatedAt, ...counts, retryable: job.version === version && !job.importedFromLegacy && ['partial', 'failed'].includes(job.status) && job.retryable !== false }
+    // Publish progress summaries even before any prose is approved. Candidates,
+    // rejection details and repair instructions remain private worker state.
+    if (includeArticle && job.metrics) {
+      const drafted = Object.keys(job.pendingDrafts || {}).length
+      const revising = Object.values(job.failures || {}).some(value => !value.terminal)
+      result.activity = { phase: !job.plan ? 'source' : !reviewedStance(job) ? 'preparing' : revising ? 'revising' : drafted ? 'reviewing' : 'writing', drafted }
+    }
     if (job.error) result.error = job.error
     if (includeArticle && job.plan && (counts.completed || counts.total === 0)) {
       const failedIds = Object.entries(job.failures || {}).filter(([, value]) => value.terminal).map(([id]) => id)
@@ -209,7 +216,9 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
       })
       return writes
     }
-    const canCall = () => clock() - began <= runBudgetMs - 90000 && clock() < Date.parse(job.deadlineAt) && !controller.signal.aborted
+    // Keep 15s for slot/budget RPCs and checkpoints, using the deadline of the
+    // next operation. A 45s review does not require a 75s writer's headroom.
+    const canCall = (reserveMs = 90000) => clock() - began <= runBudgetMs - reserveMs && clock() < Date.parse(job.deadlineAt) && !controller.signal.aborted
     const failedAttempt = error => { if (typeof error?.duration === 'number') { usageAdd(job, error, 'failed'); job.metrics.failedCalls = (job.metrics.failedCalls || 0) + 1 } }
     const failBatch = async (batch, error, clearPending = false) => {
       failedAttempt(error)
@@ -234,7 +243,7 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
         return
       }
       if (!job.plan) {
-        if (!canCall()) return
+        if (!canCall(35000)) return
         try {
           const sourceBegan = clock()
           const api = new URL(`https://${job.lang}.wikipedia.org/w/api.php`)
@@ -261,7 +270,7 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
         job.opinion ||= 'This article has no prose available for a parody rewrite.'
         await save({ opinion: job.opinion }); await store.finish(job.id, token, { status: 'complete', error: null }); return
       }
-      while (canCall()) {
+      while (canCall(60000)) {
         if (Date.parse(job.deadlineAt) <= clock()) break
         const pending = job.plan.blocks.filter(block => !Object.hasOwn(job.outputs, block.id) && !job.failures[block.id]?.terminal && (!job.failures[block.id]?.nextTryAt || Date.parse(job.failures[block.id].nextTryAt) <= clock()))
         if (!reviewedStance(job) && !job.opinionFailure?.terminal) {
@@ -275,7 +284,7 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
               usageAdd(job, result, 'opinion')
               if (typeof result.opinion !== 'string' || !result.opinion.trim() || !validViewpoint(result.viewpoint)) throw new ArticleServiceError('The model omitted its stance or viewpoint.', 502, 'invalid_output')
               await save({ pendingOpinion: { opinion: result.opinion.slice(0, 600), viewpoint: clone(result.viewpoint) } })
-              if (!canCall()) break
+              if (!canCall(60000)) break
             }
             const candidate = job.pendingOpinion
             const review = await provider.review({ kind: 'opinion', summary, opinion: candidate.opinion, viewpoint: candidate.viewpoint, signal: controller.signal })
@@ -297,7 +306,11 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
           continue
         }
         if (!pending.length || !reviewedStance(job)) break
-        const batches = pending.slice(0, ARTICLE_LIMITS.batches).map(block => [block])
+        const batches = pending
+          .filter(block => canCall(job.pendingDrafts?.[block.id] ? 60000 : 90000))
+          .sort((a, b) => Number(Boolean(job.pendingDrafts?.[b.id])) - Number(Boolean(job.pendingDrafts?.[a.id])))
+          .slice(0, ARTICLE_LIMITS.batches).map(block => [block])
+        if (!batches.length) break
         await Promise.all(batches.map(async batch => {
           try {
             const blocks = batch.map(({ id, text }) => ({ id, text }))
@@ -309,7 +322,7 @@ export function createArticleService({ store, provider, parseDocument, fetchImpl
               usageAdd(job, result, 'body')
               const drafts = checkedOutputs(batch, result)
               await save({}, {}, drafts)
-              if (!canCall()) return
+              if (!canCall(60000)) return
             }
             const rewritten = batch.map(block => ({ id: block.id, text: job.pendingDrafts[block.id] }))
             const review = await provider.review({ kind: 'rewrite', blocks, rewritten, opinion: job.opinion, viewpoint: job.viewpoint, summary: job.plan.summary, signal: controller.signal })

@@ -1,6 +1,7 @@
-import { memo, useMemo } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef } from 'react'
 import type { MouseEventHandler } from 'react'
 import createDOMPurify from 'dompurify'
+import morphdom from 'morphdom'
 import type { DOMPurify } from 'dompurify'
 import type { WikipediaArticle } from '../lib/wikipedia'
 import { prepareArticleHtml, sectionAnchor } from './articleNavigation'
@@ -19,22 +20,41 @@ function safeArticleHtml(html: string): string {
     FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed', 'base', 'meta', 'link'],
     FORBID_ATTR: ['srcdoc'],
     ALLOW_DATA_ATTR: false,
+    ADD_ATTR: ['data-trumpedia-unit'],
   })
 }
 
 const ArticleMarkup = memo(function ArticleMarkup({ html, canonicalUrl, pathname, scope }: {
   html: string; canonicalUrl: string; pathname: string; scope: string
 }) {
-  const markup = useMemo(() => ({ __html: prepareArticleHtml(safeArticleHtml(html), canonicalUrl, pathname, scope) }), [html, canonicalUrl, pathname, scope])
-  return <div className="article-section-body" dangerouslySetInnerHTML={markup} />
+  const container = useRef<HTMLDivElement>(null)
+  const markup = useMemo(() => prepareArticleHtml(safeArticleHtml(html), canonicalUrl, pathname, scope), [html, canonicalUrl, pathname, scope])
+  useLayoutEffect(() => {
+    const current = container.current
+    if (!current) return
+    const next = current.cloneNode(false) as HTMLDivElement
+    next.innerHTML = markup
+    // React owns the container; only sanitized article markup is patched inside.
+    // Keep unchanged paragraphs and their text nodes so selections survive updates.
+    morphdom(current, next, {
+      childrenOnly: true,
+      getNodeKey: node => {
+        if (!(node instanceof Element)) return undefined
+        const unit = node.getAttribute('data-trumpedia-unit')
+        return unit ? `paragraph:${unit}` : node.id ? `id:${node.id}` : undefined
+      },
+      onBeforeElUpdated: (from, to) => !from.isEqualNode(to),
+    })
+  }, [markup])
+  return <div ref={container} className="article-section-body" />
 })
 
 const Section = memo(function Section({ id, title, html, complete, terminal, canonicalUrl, pathname }: ArticleSection & {
   terminal: boolean; canonicalUrl: string; pathname: string
 }) {
-  const showText = complete || (terminal && Boolean(html))
+  const showText = Boolean(html)
   return <section id={sectionAnchor(id)} className={`article-section${complete ? ' is-complete' : ' is-pending'}`} aria-busy={!complete && !terminal}>
-    {!complete && <p className="section-rewrite-status">{showText ? 'Not fully rewritten' : `${title || 'Introduction'} · ${terminal ? 'not rewritten yet' : 'waiting for its rewrite'}`}</p>}
+    {!complete && <p className="section-rewrite-status">{showText ? terminal ? 'Not fully rewritten' : 'More paragraphs are on the way.' : `${title || 'Introduction'} · ${terminal ? 'not rewritten yet' : 'waiting for its rewrite'}`}</p>}
     {showText
       ? <ArticleMarkup html={html} canonicalUrl={canonicalUrl} pathname={pathname} scope={id} />
       : <div className="section-placeholder" aria-hidden="true"><span /><span /><span /></div>}

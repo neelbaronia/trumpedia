@@ -107,6 +107,27 @@ test('the first body paragraph checkpoints and becomes readable while other sing
   const complete = await f.service.status(job); assert.equal(complete.status, 'complete'); assert.deepEqual(complete.article.metrics.stages, { opinion: 1, 'opinion-review': 1, body: 9, review: 9 })
 })
 
+test('a reviewed paragraph is published while drafted neighbors in the same section stay private', async () => {
+  let release; const gate = new Promise(resolve => { release = resolve })
+  let reviewing; const pending = new Promise(resolve => { reviewing = resolve })
+  const f = fixture({ html: source(3), reviewHook: async input => {
+    if (input.kind === 'rewrite' && input.blocks[0].id !== 'u00000-0') { reviewing(); await gate }
+  } })
+  const job = await f.service.start({ url: wiki('ParagraphProgress') })
+  const work = f.service.dispatch()
+  try {
+    await pending; await new Promise(resolve => setImmediate(resolve))
+    const mid = await f.service.status(job)
+    assert.equal(mid.completed, 1); assert.equal(mid.total, 3)
+    assert.equal(mid.article.sections.length, 1); assert.equal(mid.article.sections[0].complete, false)
+    const html = mid.article.sections[0].html
+    assert.match(html, /0: Here is a tremendous/)
+    assert.doesNotMatch(html, /1:|2:|This is an important/)
+    assert.equal(parseDocument(html).querySelectorAll('.paragraph-placeholder').length, 2)
+  } finally { release(); await work }
+  assert.equal((await f.service.status(job)).status, 'complete')
+})
+
 test('successful long article resumes immediately across bounded invocations instead of sleeping until deadline', async () => {
   const f = fixture({ html: source(29), providerHook: async (_input, ctx) => { await new Promise(resolve => setTimeout(resolve, 2)); ctx.atLeast(ctx.now + 25000) } })
   const job = await f.service.start({ url: wiki('Long') }); await f.service.dispatch()
@@ -464,12 +485,25 @@ test('slow generation and review persist separate private phases without duplica
   saved = f.store.snapshot()[0]
   assert.equal(Object.keys(saved.pendingDrafts).length, 4, 'Four serialized checkpoint patches merge at execution instead of overwriting siblings')
   assert.deepEqual(saved.outputs, {}); assert.equal(f.calls.length, 5); assert.equal(f.reviews.length, 1)
+  assert.deepEqual((await f.service.status(job)).activity, { phase: 'reviewing', drafted: 4 })
+  assert.equal((await f.service.status({ ...job, updatedAt: saved.updatedAt })).activity, undefined, 'An unchanged metadata-only response does not guess a new phase without the plan')
   assert.doesNotMatch(JSON.stringify(await f.service.status(job)), /pendingDrafts|Here is a tremendous/)
   await f.service.dispatch()
   saved = f.store.snapshot()[0]
   assert.equal(saved.status, 'complete'); assert.equal(Object.keys(saved.outputs).length, 4)
   assert.deepEqual(saved.pendingDrafts, {}); assert.equal(f.calls.length, 5); assert.equal(f.reviews.length, 5)
   assert.equal(saved.metrics.calls, 10); assert.equal(saved.metrics.costUsdTicks, 1000)
+})
+
+test('fifteen-second paragraph drafts can be reviewed in the same bounded worker run', async () => {
+  const slow = async (_input, ctx) => { await new Promise(resolve => setTimeout(resolve, 2)); ctx.atLeast(ctx.now + 15000) }
+  const f = fixture({ html: source(4), providerHook: async (input, ctx) => { if (input.blocks) await slow(input, ctx) }, reviewHook: async (input, ctx) => { if (input.kind === 'rewrite') await slow(input, ctx) } })
+  const job = await f.service.start({ url: wiki('ReviewHeadroom') })
+  await f.service.dispatch()
+  const saved = f.store.snapshot()[0]
+  assert.equal(saved.status, 'complete'); assert.equal(Object.keys(saved.outputs).length, 4)
+  assert.equal(f.calls.length, 5); assert.equal(f.reviews.length, 5)
+  assert.equal((await f.service.status(job)).completed, 4)
 })
 
 test('a bounded seventy-five-second paragraph draft checkpoints before a separate review slice', async () => {

@@ -36,6 +36,36 @@ test('finished sections appear progressively; failed output retains original wit
   assert.equal(partial.sections[1].complete, false)
   assert.match(partial.html, /History/)
 })
+test('approved paragraphs appear in their source positions inside an unfinished section', () => {
+  const plan = prepareArticle(`<h2>History</h2><p>First: ${sentence} <a href="/wiki/Test">Original link</a>.</p><p>Second: ${sentence}</p><ul><li>Third: ${sentence}</li></ul>`, 'en', parse)
+  const outputs = { [plan.blocks[1].id]: 'A tremendous second paragraph, ready before its neighbors.' }
+  const running = renderArticle(plan, outputs)
+  const section = running.sections[1]
+  assert.equal(section.complete, false)
+  const doc = parse(section.html)
+  assert.equal(doc.querySelectorAll('[data-trumpedia-unit]').length, 3)
+  assert.equal(doc.querySelectorAll('.paragraph-placeholder').length, 2)
+  assert.equal(doc.querySelectorAll('ul > li > .paragraph-placeholder').length, 1)
+  assert.match(doc.querySelectorAll('p')[1].textContent, /tremendous second paragraph/)
+  assert.doesNotMatch(doc.body.textContent, /First:|Third:|Original link|sufficiently long/)
+  const next = renderArticle(plan, { ...outputs, [plan.blocks[0].id]: plan.blocks[0].text.replace('sufficiently', 'tremendously') })
+  assert.equal(next.sections[1].complete, false)
+  assert.match(next.sections[1].html, /href="https:\/\/en.wikipedia.org\/wiki\/Test"/)
+  assert.equal(parse(next.sections[1].html).querySelectorAll('.paragraph-placeholder').length, 1)
+})
+test('a split paragraph stays hidden until all of its model blocks are approved', () => {
+  const plan = prepareArticle(`<p>${sentence.repeat(75)}</p><p>A separate paragraph: ${sentence}</p>`, 'en', parse)
+  const large = plan.units[0]; const small = plan.units[1]
+  assert.ok(large.blockIds.length > 1)
+  const outputs = { [large.blockIds[0]]: 'Only a fragment has passed review.', [small.blockIds[0]]: 'A completely reviewed neighboring paragraph.' }
+  const running = renderArticle(plan, outputs)
+  assert.match(running.html, /completely reviewed neighboring paragraph/)
+  assert.doesNotMatch(running.html, /Only a fragment|sufficiently long/)
+  assert.equal(parse(running.html).querySelectorAll('.paragraph-placeholder').length, 1)
+  const complete = renderArticle(plan, { ...outputs, ...Object.fromEntries(large.blockIds.map(id => [id, plan.blocks.find(block => block.id === id).text])) })
+  assert.equal(complete.sections[0].complete, true)
+  assert.equal(parse(complete.html).querySelectorAll('.paragraph-placeholder').length, 0)
+})
 test('marker omissions, duplicates and reordering cannot shift or corrupt inline formatting', () => {
   const input = '__TRUMPEDIA_0__link__TRUMPEDIA_1__ and __TRUMPEDIA_2__bold__TRUMPEDIA_3__'
   assert.equal(validateMarkers(input, input.replace('link', 'tremendous link')), true)
