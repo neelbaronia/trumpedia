@@ -6,17 +6,21 @@ export interface Usage {
   completion_tokens_details?: { reasoning_tokens?: number };
 }
 export interface GenerationMetadata { model: string; duration: number; usage: Usage }
-export interface RewriteInput { blocks: Block[]; opinion?: string | null; includeOpinion?: boolean; summary?: string; signal?: AbortSignal }
+export interface Viewpoint { admire: string; question: string }
+export interface RewriteInput { blocks: Block[]; opinion?: string | null; viewpoint?: Viewpoint; revisionNotes?: string[]; previousDraft?: string; includeOpinion?: boolean; summary?: string; signal?: AbortSignal }
 export interface RewriteResult extends GenerationMetadata { blocks: Block[]; opinion?: string }
-export interface OpinionResult extends GenerationMetadata { opinion: string }
+export interface OpinionResult extends GenerationMetadata { opinion: string; viewpoint: Viewpoint }
+export interface ReviewResult extends GenerationMetadata { passed: boolean; issues: string[] }
+export interface ReviewInput { kind: 'rewrite' | 'opinion'; blocks?: Block[]; rewritten?: Block[]; opinion?: string; viewpoint?: Viewpoint; summary?: string; signal?: AbortSignal }
 export interface Provider {
-  readonly model: string; readonly baseUrl: string; readonly configured: boolean; readonly promptVersion: string;
+  readonly model: string; readonly reviewModel: string; readonly baseUrl: string; readonly configured: boolean; readonly promptVersion: string;
   rewrite(input: RewriteInput): Promise<RewriteResult>;
-  opinion(input: { summary: string; signal?: AbortSignal }): Promise<OpinionResult>;
+  opinion(input: { summary: string; revisionNotes?: string[]; previousDraft?: string; signal?: AbortSignal }): Promise<OpinionResult>;
+  review(input: ReviewInput): Promise<ReviewResult>;
 }
 export interface ProviderMetric extends GenerationMetadata { operation: string; status: number }
 export interface ProviderConfig {
-  apiKey?: string; model?: string; baseUrl?: string; fetchImpl?: typeof fetch;
+  apiKey?: string; model?: string; reviewModel?: string; baseUrl?: string; fetchImpl?: typeof fetch;
   timeoutMs?: number; maxConcurrent?: number; reasoningEffort?: string;
   onMetric?: (metric: ProviderMetric) => void;
 }
@@ -26,6 +30,8 @@ export const PROVIDER_LIMITS: Readonly<Record<string, number>>;
 export class ProviderError extends Error {
   status: number; code: string; retryable: boolean; retryAfter: number | null; retryAfterMs: number | null;
   model?: string; duration?: number; usage?: Usage;
+  feedback?: string[];
+  previousDraft?: string;
   constructor(message: string, options?: { status?: number; code?: string; retryable?: boolean; retryAfter?: number | null });
 }
 export function createProvider(config?: ProviderConfig): Provider;

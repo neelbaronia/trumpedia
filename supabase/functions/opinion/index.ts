@@ -5,6 +5,7 @@ import { createLegacyHandler, createSupabaseProviderBudget } from '../_shared/le
 const provider = createProvider({
   apiKey: Deno.env.get('ARTICLE_GENERATION_ENABLED') === 'false' ? '' : Deno.env.get('XAI_API_KEY'),
   model: Deno.env.get('XAI_MODEL') || undefined,
+  reviewModel: Deno.env.get('XAI_REVIEW_MODEL') || undefined,
   baseUrl: Deno.env.get('XAI_API_BASE_URL') || undefined,
   reasoningEffort: Deno.env.get('XAI_REASONING_EFFORT') || undefined,
   onMetric: metric => console.log(JSON.stringify({ event: 'provider_attempt', ...metric })),

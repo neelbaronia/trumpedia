@@ -1,8 +1,10 @@
-export const PIPELINE_VERSION = 'paragraphs-v3'
+export const PIPELINE_VERSION = 'paragraphs-v5'
 export const MAX_BLOCK_CHARS = 5000
+export const MAX_ATOM_CHARS = 512
 export const MARKER_PATTERN = /__TRUMPEDIA_\d+__/g
+export const KEEP_PATTERN = /<keep id="\d+">[^<>]*<\/keep>/g
 
-const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE', 'MATH', 'KBD', 'SAMP', 'SVG', 'TABLE', 'FIGURE', 'BLOCKQUOTE'])
+const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE', 'MATH', 'KBD', 'SAMP', 'SVG', 'TABLE', 'FIGURE', 'BLOCKQUOTE', 'Q'])
 const SKIP_CLASSES = ['reference', 'reflist', 'mw-editsection', 'navbox', 'toc', 'metadata', 'infobox', 'sidebar', 'hatnote', 'shortdescription', 'ambox', 'sistersitebox']
 const SKIP_SECTIONS = /^(references|notes|citations|bibliography|further reading|external links|see also|sources|footnotes)$/i
 const REMOVE_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'FRAME', 'OBJECT', 'EMBED', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT', 'OPTION', 'LINK', 'META', 'BASE', 'TEMPLATE', 'SVG', 'FOREIGNOBJECT', 'USE', 'ANIMATE', 'SET'])
@@ -83,8 +85,9 @@ function elementEnvelope(element) {
 
 function tokenizeInline(element) {
   const slots = []
-  const marker = html => {
-    const value = '__TRUMPEDIA_' + slots.length + '__'
+  let unsupported = false
+  const marker = (html, label = '') => {
+    const value = '<keep id="' + slots.length + '">' + escapeHtml(label) + '</keep>'
     slots.push({ marker: value, html })
     return value
   }
@@ -92,11 +95,23 @@ function tokenizeInline(element) {
     if (node.nodeType === 3) return node.nodeValue || ''
     if (node.nodeType !== 1) return ''
     const tag = node.tagName.toUpperCase()
-    if (isExcluded(node) || VOID_TAGS.has(tag)) return marker(node.outerHTML)
+    // Labels are a readable wire representation; the slot keeps the original
+    // HTML, including its whitespace, for exact restoration.
+    const label = (node.textContent || '').replace(/\s+/gu, ' ').trim()
+    const token = '<keep id="' + slots.length + '">' + escapeHtml(label) + '</keep>'
+    const words = label.trim().match(/\p{L}[\p{L}\p{M}'’-]*/gu) || []
+    const nameWords = words.filter(word => !/^(the|of|and|a|an|for|in|on|at|to|de|du|des|la|le|van|von)$/i.test(word))
+    const namedLink = tag === 'A' && nameWords.length > 1 && nameWords.every(word => /^\p{Lu}/u.test(word))
+    const proseLike = label.trim().length > 60 || words.length >= 8
+    const opaque = isExcluded(node) || namedLink
+    if (VOID_TAGS.has(tag) || token.length <= MAX_ATOM_CHARS && (opaque || !proseLike)) return marker(node.outerHTML, label)
+    // Long ordinary wrappers keep their tags but expose their prose for rewriting.
+    // Long code/reference payloads remain source instead of becoming model prose.
+    if (opaque) { unsupported = true; return '' }
     const envelope = elementEnvelope(node)
     return marker(envelope.openHtml) + Array.from(node.childNodes).map(walk).join('') + marker(envelope.closeHtml)
   }
-  return { text: Array.from(element.childNodes).map(walk).join(''), slots }
+  return { text: Array.from(element.childNodes).map(walk).join(''), slots, unsupported }
 }
 
 function splitText(text) {
@@ -106,10 +121,10 @@ function splitText(text) {
     let end = rest.lastIndexOf(' ', MAX_BLOCK_CHARS)
     if (end < MAX_BLOCK_CHARS / 2) end = MAX_BLOCK_CHARS
     if (/^[\uDC00-\uDFFF]$/.test(rest[end] || '')) end -= 1
-    const startMarker = rest.lastIndexOf('__TRUMPEDIA_', end)
-    if (startMarker >= 0) {
-      const markerEnd = rest.indexOf('__', startMarker + 12) + 2
-      if (markerEnd > end) end = startMarker || markerEnd
+    const startAtom = rest.lastIndexOf('<keep ', end)
+    if (startAtom >= 0) {
+      const atomEnd = rest.indexOf('</keep>', startAtom) + '</keep>'.length
+      if (atomEnd > end) end = startAtom || atomEnd
     }
     pieces.push(rest.slice(0, end))
     rest = rest.slice(end)
@@ -150,9 +165,12 @@ export function prepareArticle(rawHtml, lang, parseDocument) {
         if (isExcluded(element) || element.querySelector('p, li, dd, dt')) continue
         const plain = element.textContent || ''
         if (plain.trim().length < 40 || !/\p{L}{3}/u.test(plain)) continue
+        // Reserved protocol text in the source must never become an executable slot.
+        if (/<\/?keep\b/i.test(plain) || element.querySelector('keep') || plain.match(MARKER_PATTERN)) continue
         const tokens = tokenizeInline(element)
-        // Prevent source text from masquerading as our protected HTML markers.
-        if ((tokens.text.match(MARKER_PATTERN)?.length || 0) !== tokens.slots.length) continue
+        if (tokens.unsupported || (tokens.text.match(KEEP_PATTERN)?.length || 0) !== tokens.slots.length) continue
+        const editable = tokens.text.replace(KEEP_PATTERN, '')
+        if (editable.trim().length < 40 || !/\p{L}{3}/u.test(editable)) continue
         const id = 'u' + String(units.length).padStart(5, '0')
         const unitBlocks = splitText(tokens.text).map((text, index) => {
           const block = { id: id + '-' + index, text, sectionId: item.id }
@@ -176,7 +194,36 @@ export function escapeHtml(text) {
 }
 
 export function validateMarkers(source, output) {
-  if (typeof output !== 'string') return false
+  if (typeof source !== 'string' || typeof output !== 'string') return false
+  const expectedAtoms = source.match(KEEP_PATTERN) || []
+  const actualAtoms = output.match(KEEP_PATTERN) || []
+  if (expectedAtoms.length !== actualAtoms.length) return false
+  if (/<\/?keep\b/i.test(source.replace(KEEP_PATTERN, '')) || /<\/?keep\b/i.test(output.replace(KEEP_PATTERN, ''))) return false
+  // Empty atoms may be opening/closing HTML envelopes. Pin their order, and
+  // allow fully closed inline elements to move only within the same envelope.
+  const expectedByToken = new Map()
+  const expectedBoundaries = []
+  const expectedIds = new Set()
+  let zone = 0
+  for (const atom of expectedAtoms) {
+    const [, id, label] = /^<keep id="(\d+)">([^<>]*)<\/keep>$/.exec(atom)
+    if (expectedIds.has(id)) return false
+    expectedIds.add(id)
+    expectedByToken.set(atom, { zone, boundary: label === '' })
+    if (label === '') { expectedBoundaries.push(atom); zone++ }
+  }
+  const actualIds = new Set()
+  zone = 0
+  for (const atom of actualAtoms) {
+    const expectedAtom = expectedByToken.get(atom)
+    const id = /^<keep id="(\d+)">/.exec(atom)[1]
+    if (!expectedAtom || actualIds.has(id)) return false
+    actualIds.add(id)
+    if (expectedAtom.boundary) {
+      if (atom !== expectedBoundaries[zone]) return false
+      zone++
+    } else if (expectedAtom.zone !== zone) return false
+  }
   const expected = source.match(MARKER_PATTERN) || []
   const actual = output.match(MARKER_PATTERN) || []
   return expected.length === actual.length && expected.every((marker, index) => marker === actual[index])
@@ -207,7 +254,8 @@ export function renderArticle(plan, outputs = {}, options = {}) {
   for (const unit of plan.units) {
     let text = unit.blockIds.map(id => valid.has(id) ? outputs[id] : originals.get(id) || '').join('')
     text = escapeHtml(text)
-    for (const slot of unit.slots) text = text.replace(slot.marker, () => slot.html)
+    const slots = new Map(unit.slots.map(slot => [escapeHtml(slot.marker), slot.html]))
+    text = text.replace(/&lt;keep id=&quot;\d+&quot;&gt;[\s\S]*?&lt;\/keep&gt;|__TRUMPEDIA_\d+__/g, marker => slots.get(marker) || marker)
     renderedUnits.set(unit.id, unit.openHtml + text + unit.closeHtml)
   }
   const sections = plan.sections.map(section => {

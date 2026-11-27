@@ -63,7 +63,7 @@ export function createSupabaseProviderBudget({ url, serviceRoleKey, fetchImpl = 
       const owner = globalThis.crypto.randomUUID()
       let claimed = false
       try {
-        claimed = await rpc('claim_provider_slot', { owner, lease_secs: 35 })
+        claimed = await rpc('claim_provider_slot', { owner, lease_secs: 90 })
       } catch (error) {
         // A timed-out RPC may have committed its lease; cleanup is best effort.
         try { await rpc('release_provider_slot', { owner }, false) } catch { /* The lease also expires. */ }
@@ -82,7 +82,7 @@ export function createSupabaseProviderBudget({ url, serviceRoleKey, fetchImpl = 
       return async () => {
         if (released) return
         released = true
-        try { await rpc('release_provider_slot', { owner }, false) } catch { /* The 35-second lease bounds failed cleanup. */ }
+        try { await rpc('release_provider_slot', { owner }, false) } catch { /* The 90-second lease bounds failed cleanup. */ }
       }
     },
   }
@@ -96,7 +96,6 @@ export function createLegacyHandler({ provider, operation, budget, requireBudget
   return async req => {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: legacyCorsHeaders })
     if (req.method !== 'POST') return json({ error: 'Use POST for generation.', code: 'method_not_allowed', retryable: false }, 405, { Allow: 'POST, OPTIONS' })
-    let release
     try {
       const payload = await readRequestJson(req)
       if (operation === 'rewrite') normalizeRewritePayload(payload)
@@ -106,17 +105,33 @@ export function createLegacyHandler({ provider, operation, budget, requireBudget
       if (req.signal.aborted) throw new ProviderError('The generation request was cancelled.', { status: 499, code: 'cancelled' })
       if (provider?.configured === false) throw new ProviderError('Generation is paused or not configured.', { status: 503, code: 'provider_not_configured' })
       if (requireBudget && !budget) throw unavailable()
-      release = budget ? await budget.acquire(req) : undefined
-      if (req.signal.aborted) throw new ProviderError('The generation request was cancelled.', { status: 499, code: 'cancelled' })
-      if (operation === 'opinion') return json({ ...await provider.opinion({ summary: payload.summary, signal: req.signal }), provider: 'xai' }, 200)
+      if (typeof provider?.review !== 'function') throw unavailable()
+      const attempt = async call => {
+        const release = budget ? await budget.acquire(req) : undefined
+        try {
+          if (req.signal.aborted) throw new ProviderError('The generation request was cancelled.', { status: 499, code: 'cancelled' })
+          return await call()
+        } finally { try { await release?.() } catch { /* A lost release still expires. */ } }
+      }
+      const reviews = []
+      const review = async input => {
+        const result = await attempt(() => provider.review({ ...input, signal: req.signal }))
+        reviews.push(result)
+        if (!result.passed) throw new ProviderError('The candidate did not pass its factual and editorial review. Please retry.', { status: 502, code: 'quality_rejected', retryable: true })
+      }
+      if (operation === 'opinion') {
+        const result = await attempt(() => provider.opinion({ summary: payload.summary, signal: req.signal }))
+        await review({ kind: 'opinion', summary: payload.summary, opinion: result.opinion })
+        return json({ ...result, reviews, provider: 'xai' }, 200)
+      }
       const { legacy, ...input } = normalizeRewritePayload(payload)
-      const result = await provider.rewrite({ ...input, signal: req.signal })
-      return json({ ...result, provider: 'xai', ...(legacy ? { segments: result.blocks.map(block => block.text) } : {}) }, 200)
+      const result = await attempt(() => provider.rewrite({ ...input, signal: req.signal }))
+      if (result.opinion) await review({ kind: 'opinion', summary: input.summary, opinion: result.opinion })
+      await review({ kind: 'rewrite', blocks: input.blocks, rewritten: result.blocks, opinion: result.opinion || input.opinion || 'Value practical skill and achievement; be playfully skeptical of unnecessary fuss. Opinions must not override source facts.' })
+      return json({ ...result, reviews, provider: 'xai', ...(legacy ? { segments: result.blocks.map(block => block.text) } : {}) }, 200)
     } catch (error) {
       const safe = safeProviderError(error)
       return json(safe.body, safe.status, safe.headers)
-    } finally {
-      try { await release?.() } catch { /* The lease expires if cleanup is unavailable. */ }
     }
   }
 }

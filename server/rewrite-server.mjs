@@ -110,6 +110,7 @@ async function main() {
   const provider = createProvider({
     apiKey: process.env.ARTICLE_GENERATION_ENABLED === 'false' ? '' : process.env.XAI_API_KEY,
     model: process.env.XAI_MODEL || undefined,
+    reviewModel: process.env.XAI_REVIEW_MODEL || undefined,
     baseUrl: process.env.XAI_API_BASE_URL || undefined,
     reasoningEffort: process.env.XAI_REASONING_EFFORT || undefined,
     onMetric: metric => console.log(JSON.stringify({ event: 'provider_attempt', ...metric })),
